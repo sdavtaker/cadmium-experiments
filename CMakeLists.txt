@@ -18,3 +18,4 @@ set(CADMIUM_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 add_subdirectory("${CADMIUM_DIR}" cadmium-build)
 
 add_subdirectory(vdw14)
+add_subdirectory(vdw14-devs)

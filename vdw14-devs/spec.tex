@@ -1,0 +1,123 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage{parskip}
+
+\title{VDW14 Tick-Counter Experiment\\
+  \large Cadmium Adaptation --- Classic DEVS with Typed Ports and SELECT}
+\author{Damián Vicino}
+\date{2026}
+
+\begin{document}
+\maketitle
+
+\section*{Reference}
+Vicino, Dalle, Wainer.
+\textit{A Data Type for Discretized Time Representation in DEVS.}
+SIMUTOOLS 2014. \texttt{hal-01055555}.
+
+\section*{Canonical Model}
+
+\[
+  C = \langle X_C,\, Y_C,\, D,\, \{M_d\},\, \text{EIC},\, \text{EOC},\, \text{IC},\, \text{SELECT} \rangle
+\]
+\[
+  D = \{G_{1/10},\; G_{1},\; K\},\quad
+  X_C = \emptyset,\quad
+  Y_C \subseteq \mathbb{N}
+\]
+\[
+  \text{IC} = \{(G_{1/10}.\texttt{out} \to K.\texttt{add}),\;
+               (G_{1}.\texttt{out} \to K.\texttt{reset})\}
+  \quad
+  \text{EOC} = \{(K.\texttt{sum} \to C.\texttt{out})\}
+\]
+
+Expected invariant: every output of $K$ equals $10$.
+
+\section*{Classic DEVS vs.\ PDEVS}
+
+Classic (sequential) DEVS serialises event processing: at each time step,
+\emph{exactly one} imminent model transitions.  The \textbf{SELECT} function
+breaks ties when more than one model is scheduled at the same time:
+\[
+  \text{SELECT} : 2^D \setminus \{\emptyset\} \to D,\quad
+  \text{SELECT}(I) \in I
+\]
+
+PDEVS, by contrast, transitions \emph{all} imminent models simultaneously and
+delivers their outputs as bags in a single external or confluence call.
+Classic DEVS uses \emph{message boxes}: at most one message per port per step.
+
+\section*{SELECT Policy}
+
+At integer seconds $G_{1/10}$ and $G_1$ are simultaneously imminent (under
+exact arithmetic).  To replicate the behaviour of the standard confluence
+rule (add before reset), SELECT prioritises $G_{1/10}$:
+
+\[
+  \text{SELECT}(I) =
+  \begin{cases}
+    G_{1/10} & \text{if } G_{1/10} \in I \\
+    G_{1}    & \text{if } G_{1} \in I,\; G_{1/10} \notin I \\
+    K        & \text{otherwise}
+  \end{cases}
+\]
+
+The resulting processing order at $t = k \in \mathbb{Z}^+$ is therefore:
+\begin{enumerate}
+  \item $G_{1/10}$ fires: routes $1$ to $K.\texttt{add}$; $K$ increments to $10$.
+  \item $G_{1}$ fires: routes \texttt{reset\_tick} to $K.\texttt{reset}$;
+        $K$ sets \texttt{ready}, $ta_K = 0$.
+  \item $K$ fires internally: outputs $10$, resets accumulator to $0$.
+\end{enumerate}
+
+\section*{Cadmium Adaptation}
+
+Cadmium defines Classic DEVS models in \texttt{cadmium::basic\_models::devs::}.
+The accumulator uses \texttt{make\_message\_box} (optional-per-port, not a bag)
+for its external transition; there is \textbf{no} confluence function.
+The models and port types are identical to the PDEVS variant---only the
+transition semantics and the driving simulator differ.
+
+\subsection*{Simulation Loop}
+
+Cadmium does not yet ship a general Classic DEVS coordinator.
+The experiment implements a bespoke fixed-topology loop:
+
+\begin{enumerate}
+  \item Compute $t_{\text{next}} = \min(t_{G_{1/10}},\, t_{G_1},\, t_K)$
+        using absolute scheduled times.
+  \item If multiple models share $t_{\text{next}}$, apply SELECT to choose
+        $m^*$.
+  \item Collect $\lambda(m^*)$; route output through IC / EOC.
+  \item Apply $\delta_{\text{int}}$ to $m^*$; apply $\delta_{\text{ext}}$ to
+        each model that received a routed message (elapsed = $t_{\text{next}} -
+        t_{\text{last},d}$).
+  \item Update scheduled times; advance $t$ only when no model remains
+        imminent at $t_{\text{next}}$.
+\end{enumerate}
+
+A general cadmium \texttt{devs\_coordinator} is future work.
+
+\section*{Expected Observations}
+
+\begin{itemize}
+  \item \textbf{Float time:} the VDW14 reordering phenomenon manifests
+        identically to the PDEVS variant.  When float error makes $G_{1/10}$
+        and $G_1$ non-simultaneous (the common case), SELECT is not invoked
+        at all: whichever model is scheduled earlier fires first.  If $G_1$
+        fires before $G_{1/10}$ due to accumulated error, $K$ outputs $9$;
+        if $G_{1/10}$ fires one step late, $K$ outputs $11$.
+  \item \textbf{Rational time:} $G_{1/10}$ and $G_1$ are always simultaneously
+        imminent at integer seconds; SELECT correctly resolves the tie and
+        $K$ always outputs $10$.
+\end{itemize}
+
+The key conceptual contrast with PDEVS: SELECT only has observable effect when
+events are \emph{exactly} simultaneous.  Float arithmetic makes near-simultaneous
+events non-simultaneous, rendering SELECT irrelevant for the error case---the
+bug arises before SELECT is even consulted.
+
+\end{document}
