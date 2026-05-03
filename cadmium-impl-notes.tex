@@ -1,0 +1,124 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage{parskip}
+
+\title{Cadmium --- Implementation Notes\\
+  \large Assumptions and Context Common to All Experiments}
+\author{Damián Vicino}
+\date{2026}
+
+\begin{document}
+\maketitle
+
+This document records the formalism choices, simulator capabilities, and
+conventions that apply to every experiment in this repository.
+Experiment-specific specs should reference these notes rather than repeat them.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{Foundational Reference}
+
+The tick-counter experiment reproduced in this repository originates from:
+
+\begin{quote}
+  Damian Vicino, Olivier Dalle, Gabriel A.\ Wainer.
+  \textit{A Data Type for Discretized Time Representation in DEVS.}
+  SIMUTOOLS 2014. \texttt{hal-01055555}.
+\end{quote}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{Formalisms Available in Cadmium}
+
+Cadmium implements two related but distinct DEVS-family formalisms.
+Each experiment directory states which formalism it targets.
+
+\subsection*{PDEVS — Parallel DEVS}
+
+PDEVS transitions \emph{all} imminent models simultaneously.  At each time
+step the set of imminent models $I \subseteq D$ is computed; every model in
+$I$ fires its output function $\lambda$ and then its internal transition
+$\delta_{\text{int}}$; models not in $I$ that receive routed output undergo
+their external transition $\delta_{\text{ext}}$.  When a model is both
+imminent and receives external input, the \textbf{confluence function}
+$\delta_{\text{con}}$ resolves the two transitions:
+\[
+  \delta_{\text{con}}(s, e, x) =
+    \delta_{\text{ext}}\!\left(\delta_{\text{int}}(s),\; 0,\; x\right)
+  \quad \text{(internal-first, the Cadmium default)}
+\]
+
+Multiple simultaneous messages are delivered as a \textbf{message bag}
+(\texttt{std::vector<T>} per port), allowing many values per port per step.
+
+\subsection*{Classic DEVS — Sequential DEVS}
+
+Classic (sequential) DEVS serialises event processing: at each time step
+\emph{exactly one} imminent model transitions.  When more than one model is
+scheduled at the same time, the \textbf{SELECT} function breaks the tie:
+\[
+  \text{SELECT} : 2^D \setminus \{\emptyset\} \to D,\quad
+  \text{SELECT}(I) \in I
+\]
+The chosen model fires; outputs are delivered to influenced models as
+\textbf{message boxes} (at most one value per port per step); then time
+advances and the next step begins.
+
+\subsection*{Key Differences}
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+  \toprule
+  & PDEVS & Classic DEVS \\
+  \midrule
+  Imminent set   & all simultaneous models & one model (SELECT) \\
+  Tie-breaking   & confluence function      & SELECT function \\
+  Message carrier & bag (\texttt{vector})  & box (at most one) \\
+  Coordinator    & \texttt{pdevs::coordinator} & bespoke per experiment \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{Typed Port System}
+
+Both formalisms in Cadmium use a \textbf{typed port system}.  Each port is a
+distinct C++ type carrying a specific message type; couplings are expressed as
+typed \texttt{(sender-port, receiver-port)} pairs verified at compile time.
+Port types are declared as:
+
+\begin{itemize}
+  \item \texttt{cadmium::out\_port<T>} — output port carrying values of type \texttt{T}
+  \item \texttt{cadmium::in\_port<T>}  — input port carrying values of type \texttt{T}
+\end{itemize}
+
+Each model declares its ports via \texttt{using input\_ports} and
+\texttt{using output\_ports} type aliases.  The compiler rejects any coupling
+where the message types do not match.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{TIME Type}
+
+Cadmium is parameterised over a \texttt{TIME} template argument that must
+satisfy \texttt{cadmium::concepts::Time}: totally ordered, supporting
+arithmetic operations, and providing
+\texttt{std::numeric\_limits<TIME>::infinity()} for passive time advance.
+
+Common choices and their trade-offs:
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+  \toprule
+  Type & Representation & Risk \\
+  \midrule
+  \texttt{float}  & IEEE 754 single & $1/10$ not exact; accumulation error \\
+  \texttt{double} & IEEE 754 double & same issue, smaller magnitude \\
+  rational        & exact fraction  & no accumulation error; heavier compute \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+Each experiment spec states the TIME types it exercises and the expected
+impact on simulation correctness.
+
+\end{document}

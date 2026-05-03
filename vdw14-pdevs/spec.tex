@@ -4,45 +4,36 @@
 \usepackage{microtype}
 \usepackage{parskip}
 
-\title{VDW14 Tick-Counter Experiment\\
-  \large Cadmium Adaptation --- PDEVS with Typed Ports}
+\title{VDW14 Tick-Counter --- PDEVS\\
+  \large Model Specification and Cadmium Implementation Notes}
 \author{Damián Vicino}
 \date{2026}
 
 \begin{document}
 \maketitle
 
-\section*{Reference}
-Vicino, Dalle, Wainer.
-\textit{A Data Type for Discretized Time Representation in DEVS.}
-SIMUTOOLS 2014. \texttt{hal-01055555}.
+\noindent
+\textbf{Cadmium implementation context:} see
+\texttt{cadmium-experiments/cadmium-impl-notes.tex}.
 
-\section*{Canonical Model}
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{Model}
 
+Tick-counter coupled model under PDEVS:
 \[
   C = \langle X_C,\, Y_C,\, D,\, \{M_d\},\, \text{EIC},\, \text{EOC},\, \text{IC} \rangle
 \]
 \[
-  D = \{G_{1/10},\; G_{1},\; K\},\quad
-  X_C = \emptyset,\quad
-  Y_C \subseteq \mathbb{N}
+  D = \{G_{1/10},\; G_{1},\; K\},\quad X_C = \emptyset,\quad Y_C \subseteq \mathbb{N}
 \]
 \[
   \text{IC} = \{(G_{1/10}.\texttt{out} \to K.\texttt{add}),\;
                (G_{1}.\texttt{out} \to K.\texttt{reset})\}
-  \quad
+  \qquad
   \text{EOC} = \{(K.\texttt{sum} \to C.\texttt{out})\}
 \]
 
 Expected invariant: every output of $K$ equals $10$.
-
-\section*{Cadmium PDEVS Adaptation}
-
-Cadmium implements full Parallel DEVS (PDEVS) with \emph{typed ports}.  Each
-port carries a specific message type; couplings are expressed as typed
-\texttt{(sender-port, receiver-port)} pairs verified at compile time.
-Multiple simultaneous messages are delivered as a \emph{message bag}
-(\texttt{std::vector} per port).
 
 \subsection*{Port Types}
 
@@ -60,54 +51,56 @@ Multiple simultaneous messages are delivered as a \emph{message bag}
 \end{tabular}
 \end{center}
 
-Distinct output types on $G_{1/10}$ and $G_1$ enforce the routing contract
-at compile time: only integer ticks can reach \texttt{add} and only
-\texttt{reset\_tick} tokens can reach \texttt{reset}.
+Distinct message types on the two generator outputs enforce the routing
+contract at compile time.
 
-\subsection*{Counter Transitions}
+\subsection*{Counter Transitions (PDEVS)}
 
-PDEVS delivers all simultaneous messages in a single external (or confluence)
-call.  At every integer second $G_{1/10}$ and $G_1$ fire together; the counter
-receives both \texttt{add=1} and \texttt{reset=reset\_tick} in the same bag:
-
+At every integer second $G_{1/10}$ and $G_1$ are simultaneously imminent.
+PDEVS delivers their outputs as a single bag; $K$ receives both
+\texttt{add} and \texttt{reset} in the same external call:
 \[
-  \delta^K_{\text{ext}}(s, e, \langle \texttt{add}:[1],\; \texttt{reset}:[\cdot] \rangle)
+  \delta^K_{\text{ext}}\!\left(s,\, e,\,
+    \langle \texttt{add}\!:[1],\; \texttt{reset}\!:[\cdot] \rangle\right)
   = (n + 1,\; \text{ready})
 \]
 
-The \textbf{confluence function} governs the case where $K$ also has a pending
-internal event at the same time:
+The confluence function (internal-first) handles the case where $K$ is
+also imminent:
 \[
   \delta^K_{\text{con}}(s, e, x) =
     \delta^K_{\text{ext}}\!\left(\delta^K_{\text{int}}(s),\; 0,\; x\right)
 \]
-Internal transition fires first (clears the ready flag, resets the accumulator),
-then external input is applied.  This is the standard ``internal-first''
-priority, equivalent to $G_{1/10} \prec G_1$.
+Internal transition fires first (clears ready, resets accumulator),
+then the tick from $G_{1/10}$ is applied.  This is equivalent to
+$G_{1/10} \prec G_1$ in ordering.
 
-\subsection*{Implementation Notes}
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{Implementation Notes}
 
-The standard \texttt{cadmium::basic\_models::pdevs::accumulator<int,TIME>} is
-used directly for $K$.  Concrete generator classes (\texttt{tick\_gen<TIME>},
-\texttt{reset\_gen<TIME>}) are defined in the experiment source; their
-\texttt{period()} returns \texttt{TIME\{1\}/TIME\{10\}} and \texttt{TIME\{1\}}
-respectively, so the same source file exercises both \texttt{float} and rational
-time types.
+\paragraph{Counter $K$.}
+\texttt{cadmium::basic\_models::pdevs::accumulator<int,TIME>} is used
+directly.
 
-Outputs are captured by driving the \texttt{pdevs::coordinator} directly and
-inspecting \texttt{outbox\_port<sum>} after each \texttt{collect\_outputs} call.
+\paragraph{Generators.}
+\texttt{tick\_gen<TIME>} and \texttt{reset\_gen<TIME>} are defined in the
+experiment source.  \texttt{tick\_gen} returns period
+\texttt{TIME\{1\}/TIME\{10\}}; \texttt{reset\_gen} returns \texttt{TIME\{1\}}.
 
+\paragraph{Driver.}
+Outputs are captured by driving \texttt{pdevs::coordinator} directly and
+inspecting \texttt{outbox\_port<sum>} after each \texttt{collect\_outputs}
+call (termination by reset count, not by float end-time).
+
+\paragraph{TIME types exercised.} \texttt{float} only (see expectations below).
+
+% ─────────────────────────────────────────────────────────────────────────────
 \section*{Expected Observations}
 
-\begin{itemize}
-  \item \textbf{Float time:} IEEE~754 cannot represent $1/10$ exactly.
-        Accumulated error over $\sim$10 additions shifts occasional $G_{1/10}$
-        ticks across a 1-second boundary; $K$ outputs $9$ or $11$.
-        (Observed: ${\approx}1.4\%$ error rate over 10\,000 resets.)
-  \item \textbf{Rational time:} $K$ always outputs $10$; the histogram is a
-        single bar at $10$.  Requires a \texttt{TIME} type satisfying the
-        \texttt{cadmium::concepts::Time} concept (totally ordered, arithmetic,
-        with \texttt{std::numeric\_limits<T>::infinity()}).
-\end{itemize}
+\textbf{Float time:} IEEE~754 cannot represent $1/10$ exactly.
+Accumulated error over repeated addition of \texttt{0.1f} shifts occasional
+$G_{1/10}$ ticks across a 1-second boundary; $K$ outputs $9$ or $11$.
+Observed: ${\approx}11.4\%$ error rate over 100\,000 resets
+(histogram: $9 \times 10\,406$, $10 \times 88\,624$, $11 \times 970$).
 
 \end{document}
