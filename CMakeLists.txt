@@ -17,5 +17,42 @@ set(CADMIUM_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
 set(CADMIUM_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 add_subdirectory("${CADMIUM_DIR}" cadmium-build)
 
+# Testing
+find_package(Catch2 3 CONFIG REQUIRED)
+include(CTest)
+enable_testing()
+
 add_subdirectory(vdw14-pdevs)
 add_subdirectory(vdw14-devs)
+
+# Code Formatting
+find_program(CLANG_FORMAT
+    NAMES clang-format clang-format-18 clang-format-17 clang-format-16 clang-format-15
+    DOC "Path to clang-format executable"
+)
+
+if(CLANG_FORMAT)
+    file(GLOB_RECURSE EXPERIMENT_FORMAT_FILES
+        CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/vdw14-pdevs/*.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/vdw14-pdevs/*.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/vdw14-devs/*.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/vdw14-devs/*.cpp"
+    )
+
+    add_custom_target(experiments-format
+        COMMAND ${CLANG_FORMAT} -i -style=file ${EXPERIMENT_FORMAT_FILES}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Applying clang-format to experiment sources"
+        VERBATIM
+    )
+
+    add_custom_target(experiments-check-format
+        COMMAND ${CLANG_FORMAT} -style=file --dry-run -Werror ${EXPERIMENT_FORMAT_FILES}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Checking clang-format compliance"
+        VERBATIM
+    )
+else()
+    message(STATUS "clang-format not found; 'format' and 'check-format' targets unavailable")
+endif()
