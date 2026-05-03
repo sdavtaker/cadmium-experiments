@@ -4,8 +4,8 @@
  * Reproduces the causality error from VDW14 (Vicino, Dalle, Wainer, SIMUTOOLS
  * 2014).  The coupled model is:
  *
- *   M1 (tick_gen,  period 1/10) --> Counter.add
- *   M2 (reset_gen, period 1)    --> Counter.reset
+ *   M1 (tick_gen,  period 1/10 s) --> Counter.add
+ *   M2 (reset_gen, period 1 s)    --> Counter.reset
  *
  * M2 fires every 1 simulated second; M1 fires 10 times per second.
  * Expected output from Counter: always 10.
@@ -149,12 +149,13 @@ using top_model = modeling::pdevs::coupled_model<
 // Drives the coordinator manually to collect Counter outputs without using
 // the runner (which discards output bags after each step).
 template <typename TIME, template <typename> typename TopModel>
-std::vector<int> run_experiment(TIME end_time) {
+std::vector<int> run_experiment(int max_resets) {
     engine::coordinator<TopModel, TIME> coord;
     coord.init(TIME{});
     TIME t = coord.next();
     std::vector<int> outputs;
-    while (t < end_time) {
+    outputs.reserve(max_resets);
+    while (static_cast<int>(outputs.size()) < max_resets) {
         coord.collect_outputs(t);
         const auto &vals = coord.template outbox_port<top_out_port>();
         outputs.insert(outputs.end(), vals.begin(), vals.end());
@@ -196,14 +197,13 @@ static void print_stats(const char *label, const std::vector<int> &outputs) {
 // ── main ──────────────────────────────────────────────────────────────────────
 
 int main() {
-    // 10 000 simulated seconds → 10 000 resets; enough to show float drift.
-    const float  end_float  = 10000.0f;
+    const int max_resets = 100000;
 
     std::cout << "VDW14 Tick-Counter Experiment (Cadmium PDEVS)\n"
               << "M1 period=1/10  M2 period=1  expected counter output=10\n"
-              << "end_time=" << end_float << "  resets=" << (long)end_float << "\n\n";
+              << "max_resets=" << max_resets << "\n\n";
 
-    auto float_outputs = run_experiment<float, top_model>(end_float);
+    auto float_outputs = run_experiment<float, top_model>(max_resets);
     print_stats("float", float_outputs);
 
     return 0;
