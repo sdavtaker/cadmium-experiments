@@ -1,23 +1,5 @@
-\documentclass[11pt,a4paper]{article}
-\usepackage{amsmath,amssymb}
-\usepackage{booktabs}
-\usepackage{microtype}
-\usepackage{parskip}
-
-\title{VDW14 Tick-Counter --- PDEVS\\
-  \large Model Specification and Cadmium Implementation Notes}
-\author{Damián Vicino}
-\date{2026}
-
-\begin{document}
-\maketitle
-
-\noindent
-\textbf{Cadmium implementation context:} see
-\texttt{cadmium-experiments/cadmium-impl-notes.tex}.
-
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{Model}
+\subsection*{Model}
 
 Tick-counter coupled model under PDEVS:
 \[
@@ -35,7 +17,7 @@ Tick-counter coupled model under PDEVS:
 
 Expected invariant: every output of $K$ equals $10$.
 
-\subsection*{Port Types}
+\subsubsection*{Port Types}
 
 \begin{center}
 \begin{tabular}{@{}lll@{}}
@@ -54,7 +36,7 @@ Expected invariant: every output of $K$ equals $10$.
 Distinct message types on the two generator outputs enforce the routing
 contract at compile time.
 
-\subsection*{Counter Transitions (PDEVS)}
+\subsubsection*{Counter Transitions (PDEVS)}
 
 At every integer second $G_{1/10}$ and $G_1$ are simultaneously imminent.
 PDEVS delivers their outputs as a single bag; $K$ receives both
@@ -76,7 +58,7 @@ then the tick from $G_{1/10}$ is applied.  This is equivalent to
 $G_{1/10} \prec G_1$ in ordering.
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{Implementation Notes}
+\subsection*{Implementation Notes}
 
 \paragraph{Counter $K$.}
 \texttt{cadmium::basic\_models::pdevs::accumulator<int,TIME>} is used
@@ -95,12 +77,11 @@ call (termination by reset count, not by float end-time).
 \paragraph{TIME types exercised.} \texttt{float} only (see expectations below).
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{Expected Observations}
+\subsection*{Expected Observations}
 
 \textbf{Float time:} IEEE~754 cannot represent $1/10$ exactly.
-Accumulated error over repeated addition of \texttt{0.1f} shifts occasional
-$G_{1/10}$ ticks across a 1-second boundary; $K$ outputs $9$ or $11$.
+Floating-point error shifts occasional $G_{1/10}$ ticks across a
+1-second boundary; $K$ outputs $9$ or $11$.  Errors may break the
+causality chain and are unbounded.
 Observed: ${\approx}11.4\%$ error rate over 100\,000 resets
 (histogram: $9 \times 10\,406$, $10 \times 88\,624$, $11 \times 970$).
-
-\end{document}

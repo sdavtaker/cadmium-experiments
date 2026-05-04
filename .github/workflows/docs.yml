@@ -1,0 +1,32 @@
+name: Build PDF Documentation
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LaTeX
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            texlive-latex-base texlive-latex-extra \
+            texlive-science texlive-fonts-recommended
+
+      - name: Build PDF
+        run: |
+          mkdir -p build/docs
+          cd docs
+          pdflatex -interaction=nonstopmode -output-directory ../build/docs main.tex
+          pdflatex -interaction=nonstopmode -output-directory ../build/docs main.tex
+
+      - name: Upload PDF artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cadmium-experiments-docs
+          path: build/docs/main.pdf
+          retention-days: 14

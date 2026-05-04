@@ -56,3 +56,19 @@ if(CLANG_FORMAT)
 else()
     message(STATUS "clang-format not found; 'format' and 'check-format' targets unavailable")
 endif()
+
+# PDF Documentation
+find_program(PDFLATEX pdflatex DOC "Path to pdflatex")
+if(PDFLATEX)
+    set(DOCS_OUTPUT_DIR ${CMAKE_BINARY_DIR}/docs)
+    add_custom_target(docs
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${DOCS_OUTPUT_DIR}
+        COMMAND ${PDFLATEX} -interaction=nonstopmode -output-directory ${DOCS_OUTPUT_DIR} main.tex
+        COMMAND ${PDFLATEX} -interaction=nonstopmode -output-directory ${DOCS_OUTPUT_DIR} main.tex
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/docs
+        COMMENT "Building PDF documentation -> build/docs/main.pdf"
+        VERBATIM
+    )
+else()
+    message(STATUS "pdflatex not found; 'docs' target unavailable")
+endif()

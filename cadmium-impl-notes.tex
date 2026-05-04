@@ -1,23 +1,8 @@
-\documentclass[11pt,a4paper]{article}
-\usepackage{amsmath,amssymb}
-\usepackage{booktabs}
-\usepackage{microtype}
-\usepackage{parskip}
-
-\title{Cadmium --- Implementation Notes\\
-  \large Assumptions and Context Common to All Experiments}
-\author{Damián Vicino}
-\date{2026}
-
-\begin{document}
-\maketitle
-
-This document records the formalism choices, simulator capabilities, and
+This section records the formalism choices, simulator capabilities, and
 conventions that apply to every experiment in this repository.
-Experiment-specific specs should reference these notes rather than repeat them.
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{Foundational Reference}
+\subsection*{Foundational Reference}
 
 The tick-counter experiment reproduced in this repository originates from:
 
@@ -28,12 +13,12 @@ The tick-counter experiment reproduced in this repository originates from:
 \end{quote}
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{Formalisms Available in Cadmium}
+\subsection*{Formalisms Available in Cadmium}
 
 Cadmium implements two related but distinct DEVS-family formalisms.
 Each experiment directory states which formalism it targets.
 
-\subsection*{PDEVS — Parallel DEVS}
+\subsubsection*{PDEVS --- Parallel DEVS}
 
 PDEVS transitions \emph{all} imminent models simultaneously.  At each time
 step the set of imminent models $I \subseteq D$ is computed; every model in
@@ -51,7 +36,7 @@ $\delta_{\text{con}}$ resolves the two transitions:
 Multiple simultaneous messages are delivered as a \textbf{message bag}
 (\texttt{std::vector<T>} per port), allowing many values per port per step.
 
-\subsection*{Classic DEVS — Sequential DEVS}
+\subsubsection*{Classic DEVS --- Sequential DEVS}
 
 Classic (sequential) DEVS serialises event processing: at each time step
 \emph{exactly one} imminent model transitions.  When more than one model is
@@ -64,7 +49,7 @@ The chosen model fires; outputs are delivered to influenced models as
 \textbf{message boxes} (at most one value per port per step); then time
 advances and the next step begins.
 
-\subsection*{Key Differences}
+\subsubsection*{Key Differences}
 
 \begin{center}
 \begin{tabular}{@{}lll@{}}
@@ -80,16 +65,17 @@ advances and the next step begins.
 \end{center}
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{Typed Port System}
+\subsection*{Port System}
 
-Both formalisms in Cadmium use a \textbf{typed port system}.  Each port is a
-distinct C++ type carrying a specific message type; couplings are expressed as
-typed \texttt{(sender-port, receiver-port)} pairs verified at compile time.
+Both formalisms in Cadmium use a \textbf{strongly typed port system} as a
+C++ implementation decision.  Each port is a distinct C++ type carrying a
+specific message type; couplings are expressed as typed
+\texttt{(sender-port, receiver-port)} pairs verified at compile time.
 Port types are declared as:
 
 \begin{itemize}
-  \item \texttt{cadmium::out\_port<T>} — output port carrying values of type \texttt{T}
-  \item \texttt{cadmium::in\_port<T>}  — input port carrying values of type \texttt{T}
+  \item \texttt{cadmium::out\_port<T>} --- output port carrying values of type \texttt{T}
+  \item \texttt{cadmium::in\_port<T>}  --- input port carrying values of type \texttt{T}
 \end{itemize}
 
 Each model declares its ports via \texttt{using input\_ports} and
@@ -97,7 +83,7 @@ Each model declares its ports via \texttt{using input\_ports} and
 where the message types do not match.
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{TIME Type}
+\subsection*{TIME Type}
 
 Cadmium is parameterised over a \texttt{TIME} template argument that must
 satisfy \texttt{cadmium::concepts::Time}: totally ordered, supporting
@@ -111,14 +97,12 @@ Common choices and their trade-offs:
   \toprule
   Type & Representation & Risk \\
   \midrule
-  \texttt{float}  & IEEE 754 single & $1/10$ not exact; accumulation error \\
+  \texttt{float}  & IEEE 754 single & $1/10$ not exact; errors may break causality chain and are unbounded \\
   \texttt{double} & IEEE 754 double & same issue, smaller magnitude \\
-  rational        & exact fraction  & no accumulation error; heavier compute \\
+  rational        & exact fraction  & no rounding error; heavier compute \\
   \bottomrule
 \end{tabular}
 \end{center}
 
 Each experiment spec states the TIME types it exercises and the expected
 impact on simulation correctness.
-
-\end{document}

@@ -1,23 +1,5 @@
-\documentclass[11pt,a4paper]{article}
-\usepackage{amsmath,amssymb}
-\usepackage{booktabs}
-\usepackage{microtype}
-\usepackage{parskip}
-
-\title{VDW14 Tick-Counter --- Classic DEVS\\
-  \large Model Specification and Cadmium Implementation Notes}
-\author{Damián Vicino}
-\date{2026}
-
-\begin{document}
-\maketitle
-
-\noindent
-\textbf{Cadmium implementation context:} see
-\texttt{cadmium-experiments/cadmium-impl-notes.tex}.
-
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{Model}
+\subsection*{Model}
 
 Tick-counter coupled model under Classic DEVS:
 \[
@@ -36,7 +18,7 @@ Tick-counter coupled model under Classic DEVS:
 
 Expected invariant: every output of $K$ equals $10$.
 
-\subsection*{Port Types}
+\subsubsection*{Port Types}
 
 Port declarations are identical to the PDEVS variant.
 
@@ -54,7 +36,7 @@ Port declarations are identical to the PDEVS variant.
 \end{tabular}
 \end{center}
 
-\subsection*{SELECT Policy}
+\subsubsection*{SELECT Policy}
 
 At integer seconds $G_{1/10}$ and $G_1$ are simultaneously imminent under
 exact arithmetic.  SELECT must prioritise $G_{1/10}$ so that $K$ accumulates
@@ -76,14 +58,14 @@ Resulting processing order at each integer second $t = k$:
   \item $K$ fires internally: outputs $10$, resets accumulator to $0$.
 \end{enumerate}
 
-\subsection*{Counter Transitions (Classic DEVS)}
+\subsubsection*{Counter Transitions (Classic DEVS)}
 
 Classic DEVS delivers at most one message per port per step via message boxes.
 There is no confluence function; $K$ receives \texttt{add} and \texttt{reset}
 in separate steps, each via $\delta_{\text{ext}}$.
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{Implementation Notes}
+\subsection*{Implementation Notes}
 
 \paragraph{Counter $K$.}
 Uses \texttt{cadmium::basic\_models::devs::accumulator} with
@@ -108,14 +90,13 @@ implements a bespoke fixed-topology loop:
 (see expectations below).
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{Expected Observations}
+\subsection*{Expected Observations}
 
-\textbf{Float time:} the VDW14 reordering phenomenon manifests identically
-to the PDEVS variant.  When float error makes $G_{1/10}$ and $G_1$
-non-simultaneous, SELECT is not invoked: whichever model appears earlier
-in scheduled time fires first.  If $G_1$ fires before $G_{1/10}$ due to
-accumulated error, $K$ outputs $9$; if $G_{1/10}$ fires one step late,
-$K$ outputs $11$.
+\textbf{Float time:} floating-point error makes $G_{1/10}$ and $G_1$
+non-simultaneous; SELECT is not invoked because only one model is imminent.
+If $G_1$ fires before $G_{1/10}$ due to accumulated error, $K$ outputs $9$;
+if $G_{1/10}$ fires one step late, $K$ outputs $11$.
+Errors may break the causality chain and are unbounded.
 
 \textbf{Rational time:} $G_{1/10}$ and $G_1$ are always simultaneously
 imminent at integer seconds; SELECT correctly resolves the tie and $K$
@@ -125,5 +106,3 @@ always outputs $10$.
 events are \emph{exactly} simultaneous.  Float arithmetic makes
 near-simultaneous events non-simultaneous, rendering SELECT irrelevant for
 the error case --- the bug arises before SELECT is consulted.
-
-\end{document}
