@@ -15,7 +15,7 @@ jobs:
         with:
           root_file: main.tex
           working_directory: docs
-          texlive_version: 2026
+          texlive_version: latest
 
       - name: Upload PDF artifact
         uses: actions/upload-artifact@v4
