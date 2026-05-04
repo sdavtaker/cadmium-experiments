@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: BSD-2-Clause
 #include <cadmium/basic_model/pdevs/accumulator.hpp>
 #include <cadmium/engine/pdevs_coordinator.hpp>
 #include <cadmium/modeling/coupling.hpp>

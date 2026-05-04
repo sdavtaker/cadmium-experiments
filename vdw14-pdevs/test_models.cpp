@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: BSD-2-Clause
 #include <cadmium/basic_model/pdevs/accumulator.hpp>
 
 #include "reset_gen.hpp"

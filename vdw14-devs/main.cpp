@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: BSD-2-Clause
 #include <cadmium/basic_model/devs/accumulator.hpp>
 #include <cadmium/modeling/message_box.hpp>
 #include <cadmium/modeling/ports.hpp>

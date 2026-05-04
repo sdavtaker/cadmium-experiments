@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: BSD-2-Clause
 #include "reset_gen.hpp"
 #include "tick_gen.hpp"
 #include <catch2/catch_test_macros.hpp>
