@@ -8,7 +8,7 @@ jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Compile LaTeX
         uses: xu-cheng/latex-action@v3
@@ -18,7 +18,7 @@ jobs:
           texlive_version: latest
 
       - name: Upload PDF artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cadmium-experiments-docs
           path: docs/main.pdf
