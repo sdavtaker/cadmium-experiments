@@ -4,10 +4,10 @@ conventions that apply to every experiment in this repository.
 % ─────────────────────────────────────────────────────────────────────────────
 \subsection*{Foundational References}
 
-The tick-counter experiment reproduced in this repository originates
-from~\cite{VDW14}.  Cadmium~\cite{VWRB19} is an evolution of the
-sequential PDEVS architecture~\cite{VNWD15}, adding a compile-time
-typed port system.  PDEVS is defined in~\cite{ZPK00}.
+The experiments in this repository reproduce models from the literature;
+each experiment section cites its source.  Cadmium~\cite{VWRB19} is an
+evolution of the sequential PDEVS architecture~\cite{VNWD15}, adding a
+compile-time typed port system.  PDEVS is defined in~\cite{ZPK00}.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \subsection*{Cadmium PDEVS}
@@ -59,10 +59,11 @@ There is no confluence function in Classic DEVS.
   \toprule
   & PDEVS & Classic DEVS \\
   \midrule
-  Imminent set     & all simultaneous models   & one model (SELECT) \\
-  Tie-breaking     & confluence function        & SELECT function \\
-  Message carrier  & bag (\texttt{vector<T>})  & box (at most one) \\
-  $\delta_{\text{con}}$ & defined              & not part of the formalism \\
+  Imminent set          & all simultaneous models  & one model (SELECT) \\
+  Tie-breaking          & confluence function       & SELECT function \\
+  SELECT                & absent                   & part of the formalism \\
+  Message carrier       & bag (\texttt{vector<T>}) & box (at most one) \\
+  $\delta_{\text{con}}$ & defined                  & absent \\
   \bottomrule
 \end{tabular}
 \end{center}}

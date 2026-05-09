@@ -17,9 +17,16 @@ jobs:
           working_directory: docs
           texlive_version: latest
 
+      - name: Get date
+        id: date
+        run: echo "DATE=$(date -u +%Y-%m-%d)" >> $GITHUB_OUTPUT
+
+      - name: Rename PDF
+        run: mv docs/main.pdf docs/cadmium-experiments-${{ steps.date.outputs.DATE }}.pdf
+
       - name: Upload PDF artifact
         uses: actions/upload-artifact@v7
         with:
           name: cadmium-experiments-docs
-          path: docs/main.pdf
+          path: docs/cadmium-experiments-${{ steps.date.outputs.DATE }}.pdf
           retention-days: 14
