@@ -1,1 +1,7 @@
 build/
+
+# LaTeX build artifacts
+docs/*.pdf
+docs/*.aux
+docs/*.log
+docs/*.toc
