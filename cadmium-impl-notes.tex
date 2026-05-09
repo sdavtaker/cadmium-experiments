@@ -2,31 +2,29 @@ This section records the formalism choices, simulator capabilities, and
 conventions that apply to every experiment in this repository.
 
 % ─────────────────────────────────────────────────────────────────────────────
-\subsection*{Foundational Reference}
+\subsection*{Foundational References}
 
-The tick-counter experiment reproduced in this repository originates from:
-
-\begin{quote}
-  Damian Vicino, Olivier Dalle, Gabriel A.\ Wainer.
-  \textit{A Data Type for Discretized Time Representation in DEVS.}
-  SIMUTOOLS 2014. \texttt{hal-01055555}.
-\end{quote}
+The tick-counter experiment reproduced in this repository originates
+from~\cite{VDW14}.  Cadmium~\cite{VWRB19} is an evolution of the
+sequential PDEVS architecture~\cite{VNWD15}, adding a compile-time
+typed port system.  PDEVS is defined in~\cite{ZPK00}.
 
 % ─────────────────────────────────────────────────────────────────────────────
-\subsection*{Formalisms Available in Cadmium}
+\subsection*{Cadmium PDEVS}
 
-Cadmium implements two related but distinct DEVS-family formalisms.
-Each experiment directory states which formalism it targets.
+Cadmium implements Parallel DEVS (PDEVS)~\cite{ZPK00} following the
+sequential call/return architecture of~\cite{VNWD15} with a compile-time
+port system introduced in~\cite{VWRB19}.  All simulation steps execute
+in a single thread with a call stack linear in the model hierarchy depth.
 
-\subsubsection*{PDEVS --- Parallel DEVS}
-
-PDEVS transitions \emph{all} imminent models simultaneously.  At each time
-step the set of imminent models $I \subseteq D$ is computed; every model in
-$I$ fires its output function $\lambda$ and then its internal transition
-$\delta_{\text{int}}$; models not in $I$ that receive routed output undergo
-their external transition $\delta_{\text{ext}}$.  When a model is both
-imminent and receives external input, the \textbf{confluence function}
-$\delta_{\text{con}}$ resolves the two transitions:
+PDEVS transitions \emph{all} imminent models simultaneously.  At each
+time step the set of imminent models $I \subseteq D$ is computed; every
+model in $I$ fires its output function $\lambda$ and then its internal
+transition $\delta_{\text{int}}$; models not in $I$ that receive routed
+output undergo their external transition $\delta_{\text{ext}}$.  When a
+model is both imminent and receives external input, the
+\textbf{confluence function} $\delta_{\text{con}}$ resolves the two
+transitions:
 \[
   \delta_{\text{con}}(s, e, x) =
     \delta_{\text{ext}}\!\left(\delta_{\text{int}}(s),\; 0,\; x\right)
@@ -36,42 +34,46 @@ $\delta_{\text{con}}$ resolves the two transitions:
 Multiple simultaneous messages are delivered as a \textbf{message bag}
 (\texttt{std::vector<T>} per port), allowing many values per port per step.
 
-\subsubsection*{Classic DEVS --- Sequential DEVS}
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection*{Cadmium Classic DEVS}
 
 Classic (sequential) DEVS serialises event processing: at each time step
-\emph{exactly one} imminent model transitions.  When more than one model is
-scheduled at the same time, the \textbf{SELECT} function breaks the tie:
+\emph{exactly one} imminent model transitions.  When more than one model
+is scheduled at the same time, the \textbf{SELECT} function breaks the
+tie:
 \[
   \text{SELECT} : 2^D \setminus \{\emptyset\} \to D,\quad
   \text{SELECT}(I) \in I
 \]
-The chosen model fires; outputs are delivered to influenced models as
-\textbf{message boxes} (at most one value per port per step); then time
-advances and the next step begins.
+
+The chosen model fires its output and internal transition; outputs are
+delivered to influenced models as \textbf{message boxes} (at most one
+value per port per step); then time advances and the next step begins.
+There is no confluence function in Classic DEVS.
 
 \subsubsection*{Key Differences}
 
+{\small
 \begin{center}
 \begin{tabular}{@{}lll@{}}
   \toprule
   & PDEVS & Classic DEVS \\
   \midrule
-  Imminent set   & all simultaneous models & one model (SELECT) \\
-  Tie-breaking   & confluence function      & SELECT function \\
-  Message carrier & bag (\texttt{vector})  & box (at most one) \\
-  Coordinator    & \texttt{pdevs::coordinator} & bespoke per experiment \\
+  Imminent set     & all simultaneous models   & one model (SELECT) \\
+  Tie-breaking     & confluence function        & SELECT function \\
+  Message carrier  & bag (\texttt{vector<T>})  & box (at most one) \\
+  $\delta_{\text{con}}$ & defined              & not part of the formalism \\
   \bottomrule
 \end{tabular}
-\end{center}
+\end{center}}
 
 % ─────────────────────────────────────────────────────────────────────────────
 \subsection*{Port System}
 
-Both formalisms in Cadmium use a \textbf{strongly typed port system} as a
-C++ implementation decision.  Each port is a distinct C++ type carrying a
-specific message type; couplings are expressed as typed
-\texttt{(sender-port, receiver-port)} pairs verified at compile time.
-Port types are declared as:
+Both formalisms in Cadmium use a \textbf{strongly typed port system}.
+Each port is a distinct C++ type carrying a specific message type;
+couplings are expressed as \texttt{(sender-port, receiver-port)} pairs
+verified at compile time.  Port types are declared as:
 
 \begin{itemize}
   \item \texttt{cadmium::out\_port<T>} --- output port carrying values of type \texttt{T}
@@ -79,30 +81,58 @@ Port types are declared as:
 \end{itemize}
 
 Each model declares its ports via \texttt{using input\_ports} and
-\texttt{using output\_ports} type aliases.  The compiler rejects any coupling
-where the message types do not match.
+\texttt{using output\_ports} type aliases.  The compiler rejects any
+coupling where the message types do not match, replacing runtime
+encoding conventions with compile-time guarantees.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \subsection*{TIME Type}
 
-Cadmium is parameterised over a \texttt{TIME} template argument that must
-satisfy \texttt{cadmium::concepts::Time}: totally ordered, supporting
-arithmetic operations, and providing
+Cadmium is parameterised over a \texttt{TIME} template argument that
+must satisfy \texttt{cadmium::concepts::Time}: totally ordered,
+supporting arithmetic operations, and providing
 \texttt{std::numeric\_limits<TIME>::infinity()} for passive time advance.
 
-Common choices and their trade-offs:
+Common choices:
 
+{\small
 \begin{center}
-\begin{tabular}{@{}lll@{}}
+\begin{tabular}{@{}llp{5cm}@{}}
   \toprule
   Type & Representation & Risk \\
   \midrule
-  \texttt{float}  & IEEE 754 single & $1/10$ not exact; errors may break causality chain and are unbounded \\
-  \texttt{double} & IEEE 754 double & same issue, smaller magnitude \\
-  rational        & exact fraction  & no rounding error; heavier compute \\
+  \texttt{float}  & IEEE~754 single &
+    $1/10$ not exact; errors may break the causality
+    chain and are unbounded \\[4pt]
+  \texttt{double} & IEEE~754 double &
+    same issue, smaller magnitude \\[4pt]
+  rational & exact fraction &
+    no rounding error; heavier compute \\
   \bottomrule
 \end{tabular}
-\end{center}
+\end{center}}
 
 Each experiment spec states the TIME types it exercises and the expected
 impact on simulation correctness.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection*{Log Format}
+
+Cadmium emits structured \textbf{NDJSON} (Newline-Delimited JSON) to
+stdout --- one JSON object per line.  Every record carries a wall-clock
+timestamp (\texttt{ts}), a severity level (\texttt{level}), a structured
+event name (\texttt{event}), and a human-readable message (\texttt{msg}).
+Events during the simulation additionally include \texttt{sim\_time},
+the logical clock value at that instant.
+
+In these experiments the log will contain:
+\begin{itemize}
+  \item a \texttt{run\_info} record at simulation start,
+  \item \texttt{sim\_state} records per step at \texttt{debug} level
+        (state, message routing),
+  \item one record per output emitted by the counter model,
+  \item a \texttt{run\_info} record at simulation end with wall time.
+\end{itemize}
+
+For the complete event schema and log levels, see
+\texttt{simulators/cadmium/}\allowbreak\texttt{docs/log-format.md}.

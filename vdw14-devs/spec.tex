@@ -1,7 +1,40 @@
 % ─────────────────────────────────────────────────────────────────────────────
-\subsection*{Model}
+\subsection*{Overview}
 
-Tick-counter coupled model under Classic DEVS:
+The model is the same tick-counter as in the PDEVS section: a fast
+generator fires every $1/10$~sec (tick), a slow generator fires every
+$1$~sec (reset), and a counter accumulates ticks and outputs the count
+on reset.  Ideally the counter outputs $10$ at every reset.
+
+Under Classic DEVS, at most one model transitions per step.  When the
+tick and reset generators are simultaneously imminent (at integer
+seconds under exact arithmetic), the \textbf{SELECT} function must
+order them to guarantee the correct count.  The experiment reveals how
+the interaction between SELECT ordering and TIME type affects the
+invariant.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection*{Model Diagram}
+
+\begin{center}
+\begin{tikzpicture}[
+  box/.style={draw, rectangle, minimum width=1.8cm, minimum height=0.9cm, align=center},
+  >=Stealth
+]
+  \node[box] (g10) at (0, 0.9) {$G_{1/10}$};
+  \node[box] (g1)  at (0,-0.9) {$G_1$};
+  \node[box] (k)   at (4.5, 0) {$K$};
+
+  \draw[->] (g10) -- node[above, font=\small] {\texttt{add}: \texttt{int} 1} (k);
+  \draw[->] (g1)  -- node[below, font=\small] {\texttt{reset}: \texttt{reset\_tick}} (k);
+  \draw[->] (k)   -- node[above, font=\small] {\texttt{sum}: \texttt{int} $n$}
+                     (6.5, 0) node[right, font=\small] {\texttt{out}};
+\end{tikzpicture}
+\end{center}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection*{Coupled Model}
+
 \[
   C = \langle X_C,\, Y_C,\, D,\, \{M_d\},\, \text{EIC},\, \text{EOC},\,
       \text{IC},\, \text{SELECT} \rangle
@@ -9,100 +42,167 @@ Tick-counter coupled model under Classic DEVS:
 \[
   D = \{G_{1/10},\; G_{1},\; K\},\quad X_C = \emptyset,\quad Y_C \subseteq \mathbb{N}
 \]
-\[
-  \text{IC} = \{(G_{1/10}.\texttt{out} \to K.\texttt{add}),\;
-               (G_{1}.\texttt{out} \to K.\texttt{reset})\}
-  \qquad
-  \text{EOC} = \{(K.\texttt{sum} \to C.\texttt{out})\}
-\]
-
-Expected invariant: every output of $K$ equals $10$.
-
-\subsubsection*{Port Types}
-
-Port declarations are identical to the PDEVS variant.
-
-\begin{center}
-\begin{tabular}{@{}lll@{}}
-  \toprule
-  Model & Port & Type \\
-  \midrule
-  $G_{1/10}$ & \texttt{out}   & \texttt{out\_port<int>} \\
-  $G_{1}$    & \texttt{out}   & \texttt{out\_port<reset\_tick>} \\
-  $K$        & \texttt{add}   & \texttt{in\_port<int>} \\
-             & \texttt{reset} & \texttt{in\_port<reset\_tick>} \\
-             & \texttt{sum}   & \texttt{out\_port<int>} \\
-  \bottomrule
-\end{tabular}
-\end{center}
-
-\subsubsection*{SELECT Policy}
-
-At integer seconds $G_{1/10}$ and $G_1$ are simultaneously imminent under
-exact arithmetic.  SELECT must prioritise $G_{1/10}$ so that $K$ accumulates
-the final tick before receiving the reset:
+\begin{align*}
+  \text{EIC}  &= \emptyset \\
+  \text{IC}   &= \{(G_{1/10}.\texttt{out} \to K.\texttt{add}),\;
+                   (G_{1}.\texttt{out} \to K.\texttt{reset})\} \\
+  \text{EOC}  &= \{(K.\texttt{sum} \to C.\texttt{out})\}
+\end{align*}
 \[
   \text{SELECT}(I) =
   \begin{cases}
-    G_{1/10} & \text{if } G_{1/10} \in I \\
-    G_{1}    & \text{if } G_{1} \in I,\; G_{1/10} \notin I \\
+    G_{1/10} & G_{1/10} \in I \\
+    G_{1}    & G_{1} \in I,\; G_{1/10} \notin I \\
     K        & \text{otherwise}
   \end{cases}
 \]
 
-Resulting processing order at each integer second $t = k$:
-\begin{enumerate}
-  \item $G_{1/10}$ fires: routes $1$ to $K.\texttt{add}$; $K$ increments to $10$.
-  \item $G_{1}$ fires: routes \texttt{reset\_tick} to $K.\texttt{reset}$;
-        $K$ transitions to ready, $ta_K = 0$.
-  \item $K$ fires internally: outputs $10$, resets accumulator to $0$.
-\end{enumerate}
-
-\subsubsection*{Counter Transitions (Classic DEVS)}
-
-Classic DEVS delivers at most one message per port per step via message boxes.
-There is no confluence function; $K$ receives \texttt{add} and \texttt{reset}
-in separate steps, each via $\delta_{\text{ext}}$.
+SELECT must prioritise $G_{1/10}$ so that $K$ accumulates the final
+tick before receiving the reset.  Expected invariant: every output
+of $K$ equals $10$.
 
 % ─────────────────────────────────────────────────────────────────────────────
-\subsection*{Implementation Notes}
+\subsubsection*{Atomic Model Definitions}
+
+Classic DEVS atomic models have no confluence function; the tuple is
+$\langle X, Y, S, \delta_{\text{ext}}, \delta_{\text{int}}, \lambda, ta \rangle$.
+
+\paragraph{Generator $G_{1/10}$.}
+
+\[
+  G_{1/10} = \langle X,\; Y,\; S,\;
+               \delta_{\text{ext}},\; \delta_{\text{int}},\;
+               \lambda,\; ta \rangle
+\]
+\begin{align*}
+  X &= \emptyset \\
+  Y_{\texttt{out}} &= \{1\} \\
+  S &= \bigl[0,\;\tfrac{1}{10}\bigr) \\
+  \delta_{\text{ext}} &= \bot
+    \quad\text{(undefined; } X = \emptyset\text{)} \\
+  \delta_{\text{int}}(s) &= 0 \\
+  \lambda(s) &= (\texttt{out}: 1) \\
+  ta(s) &= \bigl(\tfrac{1}{10} - s\bigr)\,\text{sec}
+\end{align*}
+
+\noindent\textit{Implementation.}
+\texttt{basic\_model::devs::generator<TIME>}
+from namespace \texttt{cadmium}; see \texttt{tick\_gen.hpp}.
+$S$ represents elapsed time; $ta$ returns the constant
+$\tfrac{1}{10}\,\text{sec}$.
+Port \texttt{out}: \texttt{out\_port<int>}; value transported is $1$ (tick).
+No EIC connection --- $X = \emptyset$.
+
+\paragraph{Generator $G_1$.}
+
+\[
+  G_1 = \langle X,\; Y,\; S,\;
+          \delta_{\text{ext}},\; \delta_{\text{int}},\;
+          \lambda,\; ta \rangle
+\]
+\begin{align*}
+  X &= \emptyset \\
+  Y_{\texttt{out}} &= \{\texttt{reset\_tick}\} \\
+  S &= \bigl[0,\; 1\bigr) \\
+  \delta_{\text{ext}} &= \bot
+    \quad\text{(undefined; } X = \emptyset\text{)} \\
+  \delta_{\text{int}}(s) &= 0 \\
+  \lambda(s) &= (\texttt{out}: \texttt{reset\_tick}) \\
+  ta(s) &= \bigl(1 - s\bigr)\,\text{sec}
+\end{align*}
+
+\noindent\textit{Implementation.}
+\texttt{basic\_model::devs::generator<TIME>}
+from namespace \texttt{cadmium}; see \texttt{reset\_gen.hpp}.
+$S$ represents elapsed time; $ta$ returns the constant $1\,\text{sec}$.
+Port \texttt{out}: \texttt{out\_port<reset\_tick>}; value is a
+\texttt{reset\_tick} sentinel (unit type --- the signal is the arrival).
+No EIC connection --- $X = \emptyset$.
 
 \paragraph{Counter $K$.}
-Uses \texttt{cadmium::basic\_models::devs::accumulator} with
-\texttt{make\_message\_box} (optional-per-port, not a bag).
 
-\paragraph{Generators.}
-Same classes as the PDEVS variant; period definitions are identical.
+\[
+  K = \langle X,\; Y,\; S,\;
+       \delta_{\text{ext}},\; \delta_{\text{int}},\;
+       \lambda,\; ta \rangle
+\]
+\begin{align*}
+  X_{\texttt{add}}   &= \mathbb{N}
+    & X_{\texttt{reset}} &= \{\texttt{reset\_tick}\} \\
+  Y_{\texttt{sum}}   &= \mathbb{N} \\
+  S &= \mathbb{N} \times \{\text{idle},\; \text{ready}\}
+\end{align*}
 
-\paragraph{Simulation loop.}
-Cadmium does not ship a general Classic DEVS coordinator; the experiment
-implements a bespoke fixed-topology loop:
+In Classic DEVS, message boxes deliver at most one value per port per
+step; let $x_{\texttt{add}} \in \mathbb{N} \cup \{\bot\}$ and
+$x_{\texttt{reset}} \in \{\texttt{reset\_tick}, \bot\}$.
+
+\begin{align*}
+  ta(\bullet, \text{idle})  &= +\infty\,\text{sec}
+  & ta(\bullet, \text{ready}) &= 0\,\text{sec}
+\end{align*}
+\[
+  \delta_{\text{ext}}((n, \text{idle}), e, x) =
+    \begin{cases}
+      (n + 1,\; \text{idle})  & x_{\texttt{add}} \neq \bot \\
+      (n,\;     \text{ready}) & x_{\texttt{reset}} \neq \bot
+    \end{cases}
+\]
+\begin{align*}
+  \delta_{\text{int}}(n, \text{ready}) &= (0,\; \text{idle}) \\[4pt]
+  \lambda(n, \text{ready}) &= (\texttt{sum}: n)
+\end{align*}
+
+\noindent\textit{Implementation.}
+\texttt{basic\_model::devs::accumulator<int,TIME>}
+from namespace \texttt{cadmium} using \texttt{make\_message\_box}
+(optional-per-port, not a bag).
+$S$ is stored as \texttt{(n:~int,~mode)} with an internal enum
+\texttt{\{idle,~ready\}}.
+Port \texttt{add}: \texttt{in\_port<int>}; one arriving \texttt{int}
+increments $n$ by $1$ (in this experiment the value is always $1$).
+Port \texttt{reset}: \texttt{in\_port<reset\_tick>}; arrival triggers
+the ready state.
+Port \texttt{sum}: \texttt{out\_port<int>}; emits $n$ on internal
+transition.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection*{Processing Order at Integer Seconds}
+
+Resulting event sequence at each integer second $t = k$ under SELECT:
 \begin{enumerate}
-  \item Compute $t_{\text{next}} = \min(t_{G_{1/10}},\, t_{G_1},\, t_K)$.
-  \item If multiple models share $t_{\text{next}}$, apply SELECT to pick $m^*$.
-  \item Collect $\lambda(m^*)$; route output through IC / EOC.
-  \item Apply $\delta_{\text{int}}$ to $m^*$; apply $\delta_{\text{ext}}$ to
-        each model that received routed output.
-  \item Advance time; repeat.
+  \item $G_{1/10}$ fires: routes $1$ to $K.\texttt{add}$;
+        $K$ applies $\delta_{\text{ext}}$ --- accumulator reaches $10$.
+  \item $G_{1}$ fires: routes \texttt{reset\_tick} to $K.\texttt{reset}$;
+        $K$ applies $\delta_{\text{ext}}$ --- transitions to ready,
+        $ta_K = 0$.
+  \item $K$ fires internally: $\lambda_K$ outputs $10$, accumulator
+        resets to $0$.
 \end{enumerate}
 
-\paragraph{TIME types exercised.} \texttt{float} and a rational type
-(see expectations below).
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection*{Simulation Setup}
+
+Both TIME variants are driven by the Cadmium Classic DEVS runner with a
+fixed target time limit.  If the two runs produce logs of different
+length, the longer log is truncated to the shorter run for comparison.
+
+\paragraph{TIME types exercised.} \texttt{float} and a rational type.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \subsection*{Expected Observations}
 
 \textbf{Float time:} floating-point error makes $G_{1/10}$ and $G_1$
-non-simultaneous; SELECT is not invoked because only one model is imminent.
-If $G_1$ fires before $G_{1/10}$ due to accumulated error, $K$ outputs $9$;
-if $G_{1/10}$ fires one step late, $K$ outputs $11$.
+non-simultaneous; SELECT is not invoked because only one model is
+imminent.  If $G_1$ fires before $G_{1/10}$ due to accumulated error,
+$K$ outputs $9$; if $G_{1/10}$ fires one step late, $K$ outputs $11$.
 Errors may break the causality chain and are unbounded.
 
 \textbf{Rational time:} $G_{1/10}$ and $G_1$ are always simultaneously
 imminent at integer seconds; SELECT correctly resolves the tie and $K$
 always outputs $10$.
 
-\textit{Key contrast with PDEVS:} SELECT only has observable effect when
-events are \emph{exactly} simultaneous.  Float arithmetic makes
-near-simultaneous events non-simultaneous, rendering SELECT irrelevant for
-the error case --- the bug arises before SELECT is consulted.
+\textit{Key contrast with PDEVS:} SELECT only has observable effect
+when events are \emph{exactly} simultaneous.  Float arithmetic makes
+near-simultaneous events non-simultaneous, rendering SELECT irrelevant
+for the error case --- the bug arises before SELECT is consulted.

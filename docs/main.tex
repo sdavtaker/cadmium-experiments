@@ -3,11 +3,15 @@
 \usepackage{booktabs}
 \usepackage{microtype}
 \usepackage{parskip}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
 
 \title{Cadmium Experiments\\
   \large Tick-Counter Reordering Study}
 \author{Damián Vicino}
 \date{2026}
+
+\setlength{\emergencystretch}{3em}
 
 \begin{document}
 \maketitle
@@ -24,5 +28,32 @@
 \clearpage
 \section{VDW14 Tick-Counter --- Classic DEVS}
 \input{../vdw14-devs/spec}
+
+\begin{thebibliography}{9}
+
+\bibitem{ZPK00}
+  Bernard P.\ Zeigler, Herbert Praehofer, Tag Gon Kim.
+  \textit{Theory of Modeling and Simulation: Integrating Discrete Event
+  and Continuous Complex Dynamic Systems.}
+  Academic Press, 2000.
+
+\bibitem{VDW14}
+  Damián Vicino, Olivier Dalle, Gabriel A.\ Wainer.
+  \textit{A Data Type for Discretized Time Representation in DEVS.}
+  In \textit{Proc.\ 7th Intl.\ ICST Conf.\ on Simulation Tools and
+  Techniques (SIMUTOOLS)}, 2014.
+  \texttt{hal-01055555}.
+
+\bibitem{VNWD15}
+  Damián Vicino, Daniella Niyonkuru, Gabriel A.\ Wainer, Olivier Dalle.
+  \textit{Sequential PDEVS Architecture.}
+  In \textit{Proc.\ Spring Simulation Conference (SpringSim)}, 2015.
+
+\bibitem{VWRB19}
+  Laouen Belloli, Damián Vicino, Cristina Ruiz-Martín, Gabriel A.\ Wainer.
+  \textit{Building DEVS Models with the Cadmium Tool.}
+  In \textit{Proc.\ Winter Simulation Conference (WSC)}, 2019.
+
+\end{thebibliography}
 
 \end{document}

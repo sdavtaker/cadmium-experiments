@@ -1,80 +1,175 @@
 % ─────────────────────────────────────────────────────────────────────────────
-\subsection*{Model}
+\subsection*{Overview}
 
-Tick-counter coupled model under PDEVS:
+The tick-counter model simulates a periodic tick source that is counted
+over time and periodically registered and reset.  Two generators
+produce events at different rates: a fast generator fires every
+$1/10$~sec (the \emph{tick}) and a slow generator fires every $1$~sec
+(the \emph{reset}).  A counter model accumulates incoming ticks and,
+upon receiving a reset signal, outputs the current count and resets to
+zero.  Ideally the counter outputs $10$ at every reset.
+
+Under PDEVS, the tick and reset generators are simultaneously imminent at
+every integer second.  Cadmium uses separate typed ports for the two
+signals, enforcing the routing contract at compile time rather than by
+value encoding.  The experiment reveals whether the chosen TIME type
+preserves the simultaneity invariant.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection*{Model Diagram}
+
+\begin{center}
+\begin{tikzpicture}[
+  box/.style={draw, rectangle, minimum width=1.8cm, minimum height=0.9cm, align=center},
+  >=Stealth
+]
+  \node[box] (g10) at (0, 0.9) {$G_{1/10}$};
+  \node[box] (g1)  at (0,-0.9) {$G_1$};
+  \node[box] (k)   at (4.5, 0) {$K$};
+
+  \draw[->] (g10) -- node[above, font=\small] {\texttt{add}: \texttt{int} 1} (k);
+  \draw[->] (g1)  -- node[below, font=\small] {\texttt{reset}: \texttt{reset\_tick}} (k);
+  \draw[->] (k)   -- node[above, font=\small] {\texttt{sum}: \texttt{int} $n$}
+                     (6.5, 0) node[right, font=\small] {\texttt{out}};
+\end{tikzpicture}
+\end{center}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection*{Coupled Model}
+
 \[
   C = \langle X_C,\, Y_C,\, D,\, \{M_d\},\, \text{EIC},\, \text{EOC},\, \text{IC} \rangle
 \]
 \[
   D = \{G_{1/10},\; G_{1},\; K\},\quad X_C = \emptyset,\quad Y_C \subseteq \mathbb{N}
 \]
-\[
-  \text{IC} = \{(G_{1/10}.\texttt{out} \to K.\texttt{add}),\;
-               (G_{1}.\texttt{out} \to K.\texttt{reset})\}
-  \qquad
-  \text{EOC} = \{(K.\texttt{sum} \to C.\texttt{out})\}
-\]
+\begin{align*}
+  \text{EIC}  &= \emptyset \\
+  \text{IC}   &= \{(G_{1/10}.\texttt{out} \to K.\texttt{add}),\;
+                   (G_{1}.\texttt{out} \to K.\texttt{reset})\} \\
+  \text{EOC}  &= \{(K.\texttt{sum} \to C.\texttt{out})\}
+\end{align*}
 
 Expected invariant: every output of $K$ equals $10$.
 
-\subsubsection*{Port Types}
-
-\begin{center}
-\begin{tabular}{@{}lll@{}}
-  \toprule
-  Model & Port & Type \\
-  \midrule
-  $G_{1/10}$ & \texttt{out}   & \texttt{out\_port<int>} \\
-  $G_{1}$    & \texttt{out}   & \texttt{out\_port<reset\_tick>} \\
-  $K$        & \texttt{add}   & \texttt{in\_port<int>} \\
-             & \texttt{reset} & \texttt{in\_port<reset\_tick>} \\
-             & \texttt{sum}   & \texttt{out\_port<int>} \\
-  \bottomrule
-\end{tabular}
-\end{center}
-
-Distinct message types on the two generator outputs enforce the routing
-contract at compile time.
-
-\subsubsection*{Counter Transitions (PDEVS)}
-
-At every integer second $G_{1/10}$ and $G_1$ are simultaneously imminent.
-PDEVS delivers their outputs as a single bag; $K$ receives both
-\texttt{add} and \texttt{reset} in the same external call:
-\[
-  \delta^K_{\text{ext}}\!\left(s,\, e,\,
-    \langle \texttt{add}\!:[1],\; \texttt{reset}\!:[\cdot] \rangle\right)
-  = (n + 1,\; \text{ready})
-\]
-
-The confluence function (internal-first) handles the case where $K$ is
-also imminent:
-\[
-  \delta^K_{\text{con}}(s, e, x) =
-    \delta^K_{\text{ext}}\!\left(\delta^K_{\text{int}}(s),\; 0,\; x\right)
-\]
-Internal transition fires first (clears ready, resets accumulator),
-then the tick from $G_{1/10}$ is applied.  This is equivalent to
-$G_{1/10} \prec G_1$ in ordering.
-
 % ─────────────────────────────────────────────────────────────────────────────
-\subsection*{Implementation Notes}
+\subsubsection*{Atomic Model Definitions}
+
+\paragraph{Generator $G_{1/10}$.}
+
+\[
+  G_{1/10} = \langle X,\; Y,\; S,\;
+               \delta_{\text{ext}},\; \delta_{\text{int}},\; \delta_{\text{con}},\;
+               \lambda,\; ta \rangle
+\]
+\begin{align*}
+  X &= \emptyset \\
+  Y_{\texttt{out}} &= \{1\} \\
+  S &= \bigl[0,\;\tfrac{1}{10}\bigr) \\
+  \delta_{\text{ext}} &= \bot
+    \quad\text{(undefined; } X = \emptyset\text{)} \\
+  \delta_{\text{int}}(s) &= 0 \\
+  \delta_{\text{con}} &= \bot
+    \quad\text{(undefined; } X = \emptyset\text{)} \\
+  \lambda(s) &= (\texttt{out}: 1) \\
+  ta(s) &= \bigl(\tfrac{1}{10} - s\bigr)\,\text{sec}
+\end{align*}
+
+\noindent\textit{Implementation.}
+\texttt{basic\_model::pdevs::generator<TIME>}
+from namespace \texttt{cadmium}; see \texttt{tick\_gen.hpp}.
+$S$ represents elapsed time; since $X = \emptyset$, $s = 0$ always
+holds at transition time and $ta$ returns the constant
+$\tfrac{1}{10}\,\text{sec}$.
+Port \texttt{out}: \texttt{out\_port<int>}; value transported is $1$ (tick).
+No EIC connection --- $X = \emptyset$.
+
+\paragraph{Generator $G_1$.}
+
+\[
+  G_1 = \langle X,\; Y,\; S,\;
+          \delta_{\text{ext}},\; \delta_{\text{int}},\; \delta_{\text{con}},\;
+          \lambda,\; ta \rangle
+\]
+\begin{align*}
+  X &= \emptyset \\
+  Y_{\texttt{out}} &= \{\texttt{reset\_tick}\} \\
+  S &= \bigl[0,\; 1\bigr) \\
+  \delta_{\text{ext}} &= \bot
+    \quad\text{(undefined; } X = \emptyset\text{)} \\
+  \delta_{\text{int}}(s) &= 0 \\
+  \delta_{\text{con}} &= \bot
+    \quad\text{(undefined; } X = \emptyset\text{)} \\
+  \lambda(s) &= (\texttt{out}: \texttt{reset\_tick}) \\
+  ta(s) &= \bigl(1 - s\bigr)\,\text{sec}
+\end{align*}
+
+\noindent\textit{Implementation.}
+\texttt{basic\_model::pdevs::generator<TIME>}
+from namespace \texttt{cadmium}; see \texttt{reset\_gen.hpp}.
+$S$ represents elapsed time; $ta$ returns the constant $1\,\text{sec}$.
+Port \texttt{out}: \texttt{out\_port<reset\_tick>}; value is a
+\texttt{reset\_tick} sentinel (unit type with no payload --- the signal
+is the arrival itself).
+No EIC connection --- $X = \emptyset$.
 
 \paragraph{Counter $K$.}
-\texttt{cadmium::basic\_models::pdevs::accumulator<int,TIME>} is used
-directly.
 
-\paragraph{Generators.}
-\texttt{tick\_gen<TIME>} and \texttt{reset\_gen<TIME>} are defined in the
-experiment source.  \texttt{tick\_gen} returns period
-\texttt{TIME\{1\}/TIME\{10\}}; \texttt{reset\_gen} returns \texttt{TIME\{1\}}.
+\[
+  K = \langle X,\; Y,\; S,\;
+       \delta_{\text{ext}},\; \delta_{\text{int}},\; \delta_{\text{con}},\;
+       \lambda,\; ta \rangle
+\]
+\begin{align*}
+  X_{\texttt{add}}   &= \mathbb{N}
+    & X_{\texttt{reset}} &= \{\texttt{reset\_tick}\} \\
+  Y_{\texttt{sum}}   &= \mathbb{N} \\
+  S &= \mathbb{N} \times \{\text{idle},\; \text{ready}\}
+\end{align*}
 
-\paragraph{Driver.}
-Outputs are captured by driving \texttt{pdevs::coordinator} directly and
-inspecting \texttt{outbox\_port<sum>} after each \texttt{collect\_outputs}
-call (termination by reset count, not by float end-time).
+Let $x_{\texttt{add}}$ denote the PDEVS bag on port add,
+$x_{\texttt{reset}}$ the bag on port reset.
 
-\paragraph{TIME types exercised.} \texttt{float} only (see expectations below).
+\begin{align*}
+  ta(\bullet,\text{idle})  &= +\infty\,\text{sec}
+  & ta(\bullet,\text{ready}) &= 0\,\text{sec}
+\end{align*}
+\[
+  \delta_{\text{ext}}((n, \text{mode}), e, x) =
+    \begin{cases}
+      (n + |x_{\texttt{add}}|,\; \text{ready}) & x_{\texttt{reset}} \neq \emptyset \\
+      (n + |x_{\texttt{add}}|,\; \text{idle})  & x_{\texttt{reset}} = \emptyset
+    \end{cases}
+\]
+\begin{align*}
+  \delta_{\text{int}}(n, \text{ready}) &= (0,\; \text{idle}) \\[4pt]
+  \delta_{\text{con}}(s, e, x) &=
+    \delta_{\text{ext}}\!\left(\delta_{\text{int}}(s),\; 0,\; x\right) \\[4pt]
+  \lambda(n, \text{ready}) &= (\texttt{sum}: n)
+\end{align*}
+
+\noindent\textit{Implementation.}
+\texttt{basic\_model::pdevs::accumulator<int,TIME>}
+from namespace \texttt{cadmium}.
+$S$ is stored as \texttt{(n:~int,~mode)} with an internal enum
+\texttt{\{idle,~ready\}}.
+Port \texttt{add}: \texttt{in\_port<int>}; each arriving \texttt{int}
+increments $n$.
+Port \texttt{reset}: \texttt{in\_port<reset\_tick>}; arrival triggers
+the ready state regardless of payload.
+Port \texttt{sum}: \texttt{out\_port<int>}; emits $n$ on internal
+transition.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection*{Simulation Setup}
+
+Both TIME variants are driven by the Cadmium \texttt{pdevs::runner}
+with a fixed target time limit.  The runner advances the simulation
+until logical time reaches the limit.  If the two runs produce logs of
+different length (e.g.\ due to causality breaks in the float run), the
+longer log is truncated to the shorter run for comparison.
+
+\paragraph{TIME types exercised.} \texttt{float} and a rational type.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \subsection*{Expected Observations}
@@ -85,3 +180,7 @@ Floating-point error shifts occasional $G_{1/10}$ ticks across a
 causality chain and are unbounded.
 Observed: ${\approx}11.4\%$ error rate over 100\,000 resets
 (histogram: $9 \times 10\,406$, $10 \times 88\,624$, $11 \times 970$).
+
+\textbf{Rational time:} $G_{1/10}$ and $G_1$ are always simultaneously
+imminent at integer seconds; confluence correctly resolves the tie and
+$K$ always outputs $10$.
