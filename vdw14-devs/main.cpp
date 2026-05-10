@@ -8,6 +8,17 @@
 #include "reset_gen.hpp"
 #include "tick_gen.hpp"
 
+#if defined(CADMIUM_TIME_FLOAT)
+using SimTime = float;
+#elif defined(CADMIUM_TIME_DOUBLE)
+using SimTime = double;
+#elif defined(CADMIUM_TIME_RATIONAL)
+#include "rational_time.hpp"
+using SimTime = RationalTime;
+#else
+#error "Define CADMIUM_TIME_FLOAT, CADMIUM_TIME_DOUBLE, or CADMIUM_TIME_RATIONAL"
+#endif
+
 using namespace cadmium;
 
 template <typename TIME> using counter_t = basic_models::devs::accumulator<int, TIME>;
@@ -33,7 +44,7 @@ using top_devs_model =
 
 int main() {
     cadmium::log::init();
-    cadmium::engine::devs::runner<float, top_devs_model> r{0.0f};
-    r.run_until(10000.0f);
+    cadmium::engine::devs::runner<SimTime, top_devs_model> r{SimTime{}};
+    r.run_until(SimTime{10000});
     return 0;
 }

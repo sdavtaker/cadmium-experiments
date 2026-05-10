@@ -1,6 +1,4 @@
-add_executable(vdw14-pdevs-tick-counter main.cpp)
-target_link_libraries(vdw14-pdevs-tick-counter PRIVATE cadmium)
-target_compile_options(vdw14-pdevs-tick-counter PRIVATE -Wall -Wextra -pedantic)
+cadmium_add_time_variants(vdw14-pdevs main.cpp)
 
 # Tests
 add_executable(vdw14-pdevs-tests test_models.cpp)

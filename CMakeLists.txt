@@ -22,6 +22,24 @@ find_package(Catch2 3 CONFIG REQUIRED)
 include(CTest)
 enable_testing()
 
+# Helper: build one executable per TIME variant (float, double, rational).
+# Usage: cadmium_add_time_variants(<name-prefix> <source> [LINK <libs...>])
+# Produces: <name-prefix>-float, <name-prefix>-double, <name-prefix>-rational
+function(cadmium_add_time_variants prefix source)
+    cmake_parse_arguments(ARG "" "" "LINK" ${ARGN})
+    foreach(variant IN ITEMS float double rational)
+        set(target "${prefix}-${variant}")
+        string(TOUPPER "${variant}" variant_upper)
+        add_executable(${target} ${source})
+        target_include_directories(${target} PRIVATE
+            "${CMAKE_SOURCE_DIR}"
+        )
+        target_compile_definitions(${target} PRIVATE "CADMIUM_TIME_${variant_upper}")
+        target_compile_options(${target} PRIVATE -Wall -Wextra -pedantic)
+        target_link_libraries(${target} PRIVATE cadmium ${ARG_LINK})
+    endforeach()
+endfunction()
+
 add_subdirectory(vdw14-pdevs)
 add_subdirectory(vdw14-devs)
 
