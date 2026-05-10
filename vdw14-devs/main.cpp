@@ -1,125 +1,39 @@
 // SPDX-License-Identifier: BSD-2-Clause
 #include <cadmium/basic_model/devs/accumulator.hpp>
-#include <cadmium/modeling/message_box.hpp>
-#include <cadmium/modeling/ports.hpp>
+#include <cadmium/engine/devs_engine_helpers.hpp>
+#include <cadmium/engine/devs_runner.hpp>
+#include <cadmium/logger/cadmium_log.hpp>
+#include <cadmium/modeling/coupling.hpp>
 
 #include "reset_gen.hpp"
 #include "tick_gen.hpp"
-#include <algorithm>
-#include <iostream>
-#include <limits>
-#include <map>
-#include <vector>
 
 using namespace cadmium;
 
 template <typename TIME> using counter_t = basic_models::devs::accumulator<int, TIME>;
 
-// ── Bespoke Classic DEVS driving loop ─────────────────────────────────────────
-//
-// SELECT priority: tick_gen > reset_gen > counter
+using empty_iports = std::tuple<>;
+using empty_eic    = std::tuple<>;
+using top_out_port = acc_defs::sum;
+using top_oports   = std::tuple<top_out_port>;
 
-template <typename TIME> std::vector<int> run_devs_experiment(TIME end_time) {
-    tick_gen<TIME> m1;
-    reset_gen<TIME> m2;
-    counter_t<TIME> counter;
+// SELECT priority: tick_gen (index 0) > reset_gen (index 1) > counter_t (index 2)
+// first_imminent picks the lowest-index imminent model, which encodes this ordering.
+using top_submodels = modeling::models_tuple<tick_gen, reset_gen, counter_t>;
 
-    const TIME INF = std::numeric_limits<TIME>::infinity();
+using top_ic = std::tuple<modeling::IC<tick_gen, tick_gen_defs::out, counter_t, acc_defs::add>,
+                          modeling::IC<reset_gen, reset_gen_defs::out, counter_t, acc_defs::reset>>;
 
-    TIME sched_m1      = m1.time_advance();
-    TIME sched_m2      = m2.time_advance();
-    TIME sched_counter = INF;
-    TIME last_counter  = TIME{};
+using top_eoc = std::tuple<modeling::EOC<counter_t, acc_defs::sum, top_out_port>>;
 
-    std::vector<int> outputs;
-
-    while (true) {
-        TIME t_next = std::min({sched_m1, sched_m2, sched_counter});
-        if (t_next >= end_time)
-            break;
-
-        if (sched_m1 == t_next) {
-            auto out = m1.output();
-            m1.internal_transition();
-            sched_m1 = t_next + m1.time_advance();
-
-            if (auto v = get_message<tick_gen_defs::out>(out)) {
-                if (sched_counter != TIME{}) {
-                    typename make_message_box<typename counter_t<TIME>::input_ports>::type inbox{};
-                    get_message<acc_defs::add>(inbox).emplace(*v);
-                    counter.external_transition(t_next - last_counter, inbox);
-                    last_counter  = t_next;
-                    sched_counter = t_next + counter.time_advance();
-                }
-            }
-
-        } else if (sched_m2 == t_next) {
-            auto out = m2.output();
-            m2.internal_transition();
-            sched_m2 = t_next + m2.time_advance();
-
-            if (get_message<reset_gen_defs::out>(out).has_value()) {
-                typename make_message_box<typename counter_t<TIME>::input_ports>::type inbox{};
-                get_message<acc_defs::reset>(inbox).emplace(reset_tick{});
-                counter.external_transition(t_next - last_counter, inbox);
-                last_counter  = t_next;
-                sched_counter = t_next + counter.time_advance();
-            }
-
-        } else {
-            auto out = counter.output();
-            counter.internal_transition();
-            last_counter  = t_next;
-            sched_counter = INF;
-
-            if (auto v = get_message<acc_defs::sum>(out)) {
-                outputs.push_back(*v);
-            }
-        }
-    }
-
-    return outputs;
-}
-
-// ── Statistics ────────────────────────────────────────────────────────────────
-
-static void print_stats(const char *label, const std::vector<int> &outputs) {
-    if (outputs.empty()) {
-        std::cout << label << ": no outputs\n";
-        return;
-    }
-
-    long long errors = 0;
-    std::map<int, long long> hist;
-    for (int v : outputs) {
-        ++hist[v];
-        if (v != 10)
-            ++errors;
-    }
-
-    std::cout << label << ":\n"
-              << "  resets:  " << outputs.size() << "\n"
-              << "  errors:  " << errors << " (" << (100.0 * errors / (double)outputs.size())
-              << " %)\n"
-              << "  range:   [" << hist.begin()->first << ", " << hist.rbegin()->first << "]\n"
-              << "  histogram:";
-    for (const auto &[val, cnt] : hist)
-        std::cout << "  " << val << "x" << cnt;
-    std::cout << "\n\n";
-}
-
-// ── main ──────────────────────────────────────────────────────────────────────
+template <typename TIME>
+using top_devs_model =
+    modeling::devs::coupling<TIME, empty_iports, top_oports, top_submodels, empty_eic, top_eoc,
+                             top_ic, engine::devs::first_imminent>;
 
 int main() {
-    const float end_float = 10000.0f;
-
-    std::cout << "VDW14 Tick-Counter Experiment (Cadmium Classic DEVS)\n"
-              << "SELECT: G_1/10 > G_1 > Counter\n"
-              << "M1 period=1/10  M2 period=1  expected counter output=10\n"
-              << "end_time=" << end_float << "  resets=" << (long)end_float << "\n\n";
-
-    auto float_outputs = run_devs_experiment<float>(end_float);
-    print_stats("float", float_outputs);
-
+    cadmium::log::init();
+    cadmium::engine::devs::runner<float, top_devs_model> r{0.0f};
+    r.run_until(10000.0f);
     return 0;
 }
