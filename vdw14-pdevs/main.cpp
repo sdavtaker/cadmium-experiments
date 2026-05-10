@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause
 #include <cadmium/basic_model/pdevs/accumulator.hpp>
 #include <cadmium/engine/pdevs_coordinator.hpp>
-#include <cadmium/logger/cadmium_log.hpp>
 #include <cadmium/modeling/coupling.hpp>
 
 #include "reset_gen.hpp"
@@ -43,9 +42,6 @@ using top_model = modeling::pdevs::coupled_model<TIME, empty_iports, top_oports,
                                                  empty_eic, top_eoc, top_ic>;
 
 int main() {
-    cadmium::log::init();
-    spdlog::get("cadmium")->set_level(spdlog::level::warn);
-
     cadmium::engine::coordinator<top_model, SimTime> coord;
     coord.init(SimTime{0});
     auto next = coord.next();

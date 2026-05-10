@@ -2,7 +2,6 @@
 #include <cadmium/basic_model/devs/accumulator.hpp>
 #include <cadmium/engine/devs_coordinator.hpp>
 #include <cadmium/engine/devs_engine_helpers.hpp>
-#include <cadmium/logger/cadmium_log.hpp>
 #include <cadmium/modeling/coupling.hpp>
 
 #include "reset_gen.hpp"
@@ -46,9 +45,6 @@ using top_devs_model =
                              top_ic, engine::devs::first_imminent>;
 
 int main() {
-    cadmium::log::init();
-    spdlog::get("cadmium")->set_level(spdlog::level::warn);
-
     cadmium::engine::devs::coordinator<top_devs_model, SimTime> coord;
     coord.init(SimTime{0});
     auto next = coord.next();
