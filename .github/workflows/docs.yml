@@ -4,14 +4,16 @@ on:
   push:
     branches: [main]
 
+permissions: read-all
+
 jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Compile LaTeX
-        uses: xu-cheng/latex-action@v3
+        uses: xu-cheng/latex-action@e2f99d4b3685b0da93f97e1b86ad8fab81105098 # v3
         with:
           root_file: main.tex
           working_directory: docs
@@ -25,7 +27,7 @@ jobs:
         run: mv docs/main.pdf docs/cadmium-experiments-${{ steps.date.outputs.DATE }}.pdf
 
       - name: Upload PDF artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: cadmium-experiments-docs
           path: docs/cadmium-experiments-${{ steps.date.outputs.DATE }}.pdf

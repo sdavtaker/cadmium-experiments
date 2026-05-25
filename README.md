@@ -1,4 +1,4 @@
-# Cadmium Experiments
+# Cadmium Experiments [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/sdavtaker/cadmium-experiments/badge)](https://scorecard.dev/viewer/?uri=github.com/sdavtaker/cadmium-experiments)
 
 A collection of experiments using the Cadmium simulator.
 
