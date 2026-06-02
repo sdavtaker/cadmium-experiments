@@ -4,6 +4,8 @@
 #include <cadmium/modeling/message_bag.hpp>
 #include <cadmium/modeling/ports.hpp>
 
+#include <concepts>
+#include <cstdint>
 #include <stdexcept>
 #include <tuple>
 
@@ -23,10 +25,10 @@ template <typename TIME> class tick_gen {
     TIME period() const {
         if constexpr (requires { TIME::from_scaled(100); }) {
             return TIME::from_scaled(100);
-        } else if constexpr (requires { TIME{std::int32_t{1}, std::int32_t{10}}; }) {
-            return TIME{std::int32_t{1}, std::int32_t{10}};
+        } else if constexpr (requires { TIME{1, 10}; }) {
+            return TIME{1, 10};
         } else if constexpr (!std::floating_point<TIME>) {
-            return TIME{std::int32_t{1}};
+            return TIME{1};
         } else {
             return TIME{1} / TIME{10};
         }

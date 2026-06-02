@@ -5,6 +5,7 @@
 
 #include "reset_gen.hpp"
 #include "tick_gen.hpp"
+#include <concepts>
 #include <iostream>
 #include <map>
 

@@ -5,6 +5,7 @@
 #include <cadmium/modeling/message_bag.hpp>
 #include <cadmium/modeling/ports.hpp>
 
+#include <concepts>
 #include <stdexcept>
 #include <tuple>
 
@@ -45,9 +46,8 @@ template <typename TIME> class reset_gen {
     TIME time_advance() const {
         if constexpr (requires { TIME::from_scaled(1000); }) {
             return TIME::from_scaled(1000);
-        } else if constexpr (!std::floating_point<TIME> &&
-                             !requires { TIME{std::int32_t{1}, std::int32_t{10}}; }) {
-            return TIME{std::int32_t{10}};
+        } else if constexpr (!std::floating_point<TIME> && !requires { TIME{1, 10}; }) {
+            return TIME{10};
         } else {
             return TIME{1};
         }
