@@ -5,6 +5,7 @@
 #include <cadmium/modeling/message_box.hpp>
 #include <cadmium/modeling/ports.hpp>
 
+#include <concepts>
 #include <stdexcept>
 #include <tuple>
 
@@ -39,6 +40,12 @@ template <typename TIME> class reset_gen {
     }
 
     TIME time_advance() const {
-        return TIME{1};
+        if constexpr (requires { TIME::from_scaled(1000); }) {
+            return TIME::from_scaled(1000);
+        } else if constexpr (!std::floating_point<TIME> && !requires { TIME{1, 10}; }) {
+            return TIME{10};
+        } else {
+            return TIME{1};
+        }
     }
 };

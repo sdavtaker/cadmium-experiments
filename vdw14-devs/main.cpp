@@ -6,6 +6,8 @@
 
 #include "reset_gen.hpp"
 #include "tick_gen.hpp"
+#include <concepts>
+#include <cstdint>
 #include <iostream>
 #include <map>
 
@@ -18,10 +20,32 @@ static constexpr const char *VARIANT = "double";
 #elif defined(CADMIUM_TIME_RATIONAL)
 #include "rational_time.hpp"
 using SimTime                        = RationalTime;
-static constexpr const char *VARIANT = "rational";
+static constexpr const char *VARIANT = "rational (local)";
+#elif defined(CADMIUM_TIME_DECIMAL)
+#include <cdcommons/time/decimal.hpp>
+using SimTime                        = cdcommons::time::decimal<3>;
+static constexpr const char *VARIANT = "decimal<3>";
+#elif defined(CADMIUM_TIME_RSFP)
+#include <cdcommons/time/rsfp.hpp>
+using SimTime                        = cdcommons::time::rsfp<1, 10>;
+static constexpr const char *VARIANT = "rsfp<1,10>";
+#elif defined(CADMIUM_TIME_MBFP)
+#include <cdcommons/time/mbfp.hpp>
+using SimTime                        = cdcommons::time::mbfp<10, -1>;
+static constexpr const char *VARIANT = "mbfp<10,-1>";
 #else
-#error "Define CADMIUM_TIME_FLOAT, CADMIUM_TIME_DOUBLE, or CADMIUM_TIME_RATIONAL"
+#error "Define CADMIUM_TIME_FLOAT, CADMIUM_TIME_DOUBLE, CADMIUM_TIME_RATIONAL, CADMIUM_TIME_DECIMAL, CADMIUM_TIME_RSFP, or CADMIUM_TIME_MBFP"
 #endif
+
+static SimTime run_end() {
+    if constexpr (requires { SimTime::from_whole(10000); })
+        return SimTime::from_whole(10000);
+    else if constexpr (!std::floating_point<SimTime> &&
+                       !requires { SimTime{std::int32_t{1}, std::int32_t{10}}; })
+        return SimTime{std::int32_t{100000}};
+    else
+        return SimTime{10000};
+}
 
 using namespace cadmium;
 
@@ -52,7 +76,7 @@ int main() {
     long long total = 0, errors = 0;
     std::map<int, long long> hist;
 
-    const SimTime end{10000};
+    const SimTime end = run_end();
     while (next < end) {
         coord.collect_outputs(next);
         const auto &out = coord.outbox_port<top_out_port>();
