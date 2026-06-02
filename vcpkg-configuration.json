@@ -1,0 +1,10 @@
+{
+  "registries": [
+    {
+      "kind": "git",
+      "repository": "https://github.com/sdavtaker/vcpkg-registry",
+      "baseline": "5b1b40652560d5aa7a952603f84ded5861f9d03d",
+      "packages": [ "cdcommons" ]
+    }
+  ]
+}

@@ -43,6 +43,13 @@ template <typename TIME> class reset_gen {
     }
 
     TIME time_advance() const {
-        return TIME{1};
+        if constexpr (requires { TIME::from_scaled(1000); }) {
+            return TIME::from_scaled(1000);
+        } else if constexpr (!std::floating_point<TIME> &&
+                             !requires { TIME{std::int32_t{1}, std::int32_t{10}}; }) {
+            return TIME{std::int32_t{10}};
+        } else {
+            return TIME{1};
+        }
     }
 };
