@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <iostream>
 #include <map>
+#include <type_traits>
 
 #if defined(CADMIUM_TIME_FLOAT)
 using SimTime                        = float;
