@@ -23,6 +23,7 @@ static constexpr const char *VARIANT = "double";
 using SimTime                        = RationalTime;
 static constexpr const char *VARIANT = "rational (local)";
 #elif defined(CADMIUM_TIME_DECIMAL)
+#include <cadmium/logger/cadmium_log.hpp>
 #include <cdcommons/time/decimal.hpp>
 using SimTime                        = cdcommons::time::decimal<3>;
 static constexpr const char *VARIANT = "decimal<3>";
@@ -32,6 +33,7 @@ namespace cadmium::log {
     }
 } // namespace cadmium::log
 #elif defined(CADMIUM_TIME_RSFP)
+#include <cadmium/logger/cadmium_log.hpp>
 #include <cdcommons/time/rsfp.hpp>
 using SimTime                        = cdcommons::time::rsfp<1, 10>;
 static constexpr const char *VARIANT = "rsfp<1,10>";
@@ -41,6 +43,7 @@ namespace cadmium::log {
     }
 } // namespace cadmium::log
 #elif defined(CADMIUM_TIME_MBFP)
+#include <cadmium/logger/cadmium_log.hpp>
 #include <cdcommons/time/mbfp.hpp>
 using SimTime                        = cdcommons::time::mbfp<10, -1>;
 static constexpr const char *VARIANT = "mbfp<10,-1>";
