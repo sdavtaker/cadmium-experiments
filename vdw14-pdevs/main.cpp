@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <iostream>
 #include <map>
+#include <type_traits>
 
 #if defined(CADMIUM_TIME_FLOAT)
 using SimTime                        = float;
@@ -21,29 +22,55 @@ static constexpr const char *VARIANT = "double";
 using SimTime                        = RationalTime;
 static constexpr const char *VARIANT = "rational (local)";
 #elif defined(CADMIUM_TIME_DECIMAL)
+#include <cadmium/logger/cadmium_log.hpp>
 #include <cdcommons/time/decimal.hpp>
 using SimTime                        = cdcommons::time::decimal<3>;
 static constexpr const char *VARIANT = "decimal<3>";
+namespace cadmium::log {
+    template <> inline double to_sim_double(const cdcommons::time::decimal<3> &t) noexcept {
+        return static_cast<double>(t.raw_value()) * 1e-3;
+    }
+} // namespace cadmium::log
 #elif defined(CADMIUM_TIME_RSFP)
+#include <cadmium/logger/cadmium_log.hpp>
 #include <cdcommons/time/rsfp.hpp>
 using SimTime                        = cdcommons::time::rsfp<1, 10>;
 static constexpr const char *VARIANT = "rsfp<1,10>";
+namespace cadmium::log {
+    template <> inline double to_sim_double(const cdcommons::time::rsfp<1, 10> &t) noexcept {
+        return static_cast<double>(t.magnitude()) * 0.1;
+    }
+} // namespace cadmium::log
 #elif defined(CADMIUM_TIME_MBFP)
+#include <cadmium/logger/cadmium_log.hpp>
 #include <cdcommons/time/mbfp.hpp>
 using SimTime                        = cdcommons::time::mbfp<10, -1>;
 static constexpr const char *VARIANT = "mbfp<10,-1>";
+namespace cadmium::log {
+    template <> inline double to_sim_double(const cdcommons::time::mbfp<10, -1> &t) noexcept {
+        return static_cast<double>(t.magnitude()) * 0.1;
+    }
+} // namespace cadmium::log
 #else
-#error "Define CADMIUM_TIME_FLOAT, CADMIUM_TIME_DOUBLE, CADMIUM_TIME_RATIONAL, CADMIUM_TIME_DECIMAL, CADMIUM_TIME_RSFP, or CADMIUM_TIME_MBFP"
+#error                                                                                             \
+    "Define CADMIUM_TIME_FLOAT, CADMIUM_TIME_DOUBLE, CADMIUM_TIME_RATIONAL, CADMIUM_TIME_DECIMAL, CADMIUM_TIME_RSFP, or CADMIUM_TIME_MBFP"
 #endif
 
-static SimTime run_end() {
-    if constexpr (requires { SimTime::from_whole(10000); })
-        return SimTime::from_whole(10000);
-    else if constexpr (!std::floating_point<SimTime> &&
-                       !requires { SimTime{std::int32_t{1}, std::int32_t{10}}; })
-        return SimTime{std::int32_t{100000}};
+template <typename T>
+concept HasFromWhole = std::is_class_v<T> && requires { T::from_whole(10000); };
+
+template <typename T> static T run_end_impl() {
+    if constexpr (HasFromWhole<T>)
+        return T::from_whole(10000);
+    else if constexpr (!std::floating_point<T> &&
+                       !std::constructible_from<T, std::int32_t, std::int32_t>)
+        return T{std::int32_t{100000}};
     else
-        return SimTime{10000};
+        return T{10000};
+}
+
+static SimTime run_end() {
+    return run_end_impl<SimTime>();
 }
 
 using namespace cadmium;
@@ -67,7 +94,7 @@ using top_model = modeling::pdevs::coupled_model<TIME, empty_iports, top_oports,
 
 int main() {
     cadmium::engine::coordinator<top_model, SimTime> coord;
-    coord.init(SimTime{0});
+    coord.init(SimTime{});
     auto next = coord.next();
 
     long long total = 0, errors = 0;

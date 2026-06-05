@@ -1,22 +1,21 @@
 cmake_minimum_required(VERSION 3.28)
+
+# Toolchain must be set before project() so CMake loads vcpkg during compiler detection.
+if(DEFINED ENV{VCPKG_ROOT} AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        CACHE FILEPATH "Path to vcpkg toolchain file")
+    if(NOT EXISTS "${CMAKE_TOOLCHAIN_FILE}")
+        message(FATAL_ERROR "VCPKG_ROOT is set to '$ENV{VCPKG_ROOT}' but toolchain file not found: ${CMAKE_TOOLCHAIN_FILE}")
+    endif()
+endif()
+
 project(cadmium-experiments VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(CADMIUM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../simulators/cadmium"
-    CACHE PATH "Path to cadmium source")
-
-if(DEFINED ENV{VCPKG_ROOT} AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
-    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-        CACHE STRING "")
-endif()
-
-set(CADMIUM_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
-set(CADMIUM_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-add_subdirectory("${CADMIUM_DIR}" cadmium-build)
-
+find_package(cadmium CONFIG REQUIRED)
 find_package(cdcommons CONFIG REQUIRED)
 
 # Testing
@@ -35,7 +34,7 @@ function(cadmium_add_time_variants prefix source)
         target_include_directories(${target} PRIVATE "${CMAKE_SOURCE_DIR}")
         target_compile_definitions(${target} PRIVATE "CADMIUM_TIME_${variant_upper}")
         target_compile_options(${target} PRIVATE -Wall -Wextra -pedantic)
-        target_link_libraries(${target} PRIVATE cadmium ${ARG_LINK})
+        target_link_libraries(${target} PRIVATE cadmium::cadmium ${ARG_LINK})
         if(NOT (variant STREQUAL "float" OR variant STREQUAL "double" OR variant STREQUAL "rational"))
             target_link_libraries(${target} PRIVATE cdcommons::cdcommons)
         endif()
