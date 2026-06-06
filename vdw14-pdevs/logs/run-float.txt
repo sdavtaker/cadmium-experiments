@@ -1,0 +1,10 @@
+VDW14 Tick-Counter Experiment (Cadmium PDEVS)
+TIME type       : float
+tick_gen period : 0.1 s   reset_gen period: 1 s
+expected output : 10 at every reset
+run_until       : 10000 s
+
+  resets  : 9999
+  errors  : 140 (1.40014 %)
+  range   : [9, 11]
+  histogram:  9x63  10x9859  11x77
