@@ -29,6 +29,41 @@
 \section{VDW14 Tick-Counter --- Classic DEVS}
 \input{../vdw14-devs/spec}
 
+\clearpage
+\section{CKW10 Load Balancer Model (STDEVS)}
+\label{sec:ckw10-lbm}
+\input{../ckw10-lbm/spec}
+
+\subsection*{Simulation Results}
+\label{sec:ckw10-lbm-results}
+
+The simulation was run with the parameters from TS1 ($d_r=10$,
+$s_{t_1}=s_{t_2}=0.2$, $T=10\,000$, $N=15$).
+Table~\ref{tab:ckw10-lbm} reports the theoretical and simulated values
+of the task-loss probabilities and effective throughput for each balance
+factor $b_f$.
+
+\begin{table}[h!]
+\centering
+\caption{CKW10 LBM TS1: theoretical vs.\ simulated (mean over 15 runs).}
+\label{tab:ckw10-lbm}
+\footnotesize
+\begin{tabular}{r|rr|rr|rr|rr}
+\toprule
+$b_f$ &
+$P^{\text{th}}_{\text{loss}_1}$ & $P^{\text{sim}}_{\text{loss}_1}$ &
+$P^{\text{th}}_{\text{loss}_2}$ & $P^{\text{sim}}_{\text{loss}_2}$ &
+$P^{\text{th}}_{\text{loss}}$   & $P^{\text{sim}}_{\text{loss}}$   &
+$\lambda'^{\text{th}}$ & $\lambda'^{\text{sim}}$ \\
+\midrule
+0.0 & 0.0000 & -- & 0.6667 & -- & 0.6667 & -- & 3.33 & -- \\
+0.5 & 0.5000 & -- & 0.5000 & -- & 0.5000 & -- & 5.00 & -- \\
+1.0 & 0.6667 & -- & 0.0000 & -- & 0.6667 & -- & 3.33 & -- \\
+\bottomrule
+\multicolumn{9}{l}{\footnotesize Run \texttt{ckw10-lbm} to fill simulated values.}
+\end{tabular}
+\end{table}
+
 \begin{thebibliography}{9}
 
 \bibitem{ZPK00}
@@ -53,6 +88,13 @@
   Laouen Belloli, Damián Vicino, Cristina Ruiz-Martín, Gabriel A.\ Wainer.
   \textit{Building DEVS Models with the Cadmium Tool.}
   In \textit{Proc.\ Winter Simulation Conference (WSC)}, 2019.
+
+\bibitem{CKW10}
+  Rodrigo Castro, Ernesto Kofman, Gabriel A.\ Wainer.
+  \textit{A Formal Framework for Stochastic Discrete Event System Specification
+  Modeling and Simulation.}
+  \textit{SIMULATION}, 86(10):587--611, 2010.
+  DOI: 10.1177/0037549709104482.
 
 \end{thebibliography}
 
