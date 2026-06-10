@@ -39,8 +39,16 @@ $\mathrm{IC} = \{\,(LG.\texttt{out} \to WB.\texttt{inp}),\;
 % ─────────────────────────────────────────────────────────────────────────────
 \subsection*{Atomic Model Specifications}
 
-All models are expressed in DEVS-RND form (Activity~(c), CKW10 Fig.~3)
-and use $r \sim U(0,1)$ drawn from \texttt{std::mt19937}.
+For LG, the paper derives the STDEVS specification at Activity~(a)
+(full probability-space form) and then applies Step~1 to obtain the
+measurable DEVS-RND form at Activity~(b).
+For WB and the servers the paper invokes Theorem~1 (CKW10~§6) to
+skip Activity~(a) and define the models directly at Activity~(b),
+guaranteeing they define equivalent STDEVS models.
+The mathematical specifications below use the Activity~(b) notation
+($\delta$ expressed with $r\sim U(0,1)$); the C\texttt{++}
+implementation corresponds to Activity~(c) (DEVS with PRNG algorithm,
+using \texttt{std::mt19937} and \texttt{std::exponential\_distribution}).
 
 \paragraph{Load Generator (LG).}
 
