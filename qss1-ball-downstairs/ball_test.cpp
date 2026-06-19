@@ -119,13 +119,13 @@ TEST_CASE("K04 §4.2 ball descends staircase over t=[0,10]", "[ball][k04]") {
     auto logger = std::make_shared<spdlog::logger>("cadmium", sink);
     logger->set_pattern("%v");
     logger->set_level(spdlog::level::debug);
-    cadmium::log::detail::instance() = logger;
+    cadmium::log::set_logger(logger);
 
     cadmium::engine::devs::runner<TIME, bouncing_ball> r{0.0};
     r.run_until(10.0);
     cadmium::log::flush();
 
-    cadmium::log::detail::instance() = nullptr; // detach sink before assertions
+    cadmium::log::reset_logger(); // detach sink before assertions
 
     // Horizontal: analytical frictionless prediction x(10)≈3.74.
     // Allow generous tolerance for QSS1 quantization error.
