@@ -5,3 +5,6 @@ docs/*.pdf
 docs/*.aux
 docs/*.log
 docs/*.toc
+
+# Simulation output logs (can be large; regenerate with plot_results.py)
+*.ndjson
