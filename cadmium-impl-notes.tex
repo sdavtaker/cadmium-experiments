@@ -8,6 +8,10 @@ The experiments in this repository reproduce models from the literature;
 each experiment section cites its source.  Cadmium~\cite{VWRB19} is an
 evolution of the sequential PDEVS architecture~\cite{VNWD15}, adding a
 compile-time typed port system.  PDEVS is defined in~\cite{ZPK00}.
+Stochastic DEVS (STDEVS), which extends PDEVS with probabilistic time
+advances and state transitions, is formalised in~\cite{CKW10}.
+Quantized State Systems (QSS), which map ODE integration onto DEVS
+atomic models, are introduced in~\cite{K04}.
 
 % ─────────────────────────────────────────────────────────────────────────────
 \subsection*{Cadmium PDEVS}
@@ -55,23 +59,84 @@ There is no confluence function in Classic DEVS.
 
 {\small
 \begin{center}
-\begin{tabular}{@{}lll@{}}
+\begin{tabular}{@{}lllll@{}}
   \toprule
-  & PDEVS & Classic DEVS \\
+  & PDEVS & Classic DEVS & STDEVS & QSS1 \\
   \midrule
-  Imminent set          & all simultaneous models  & one model (SELECT) \\
-  Tie-breaking          & confluence function       & SELECT function \\
-  SELECT                & absent                   & part of the formalism \\
-  Message carrier       & bag (\texttt{vector<T>}) & box (at most one) \\
-  $\delta_{\text{con}}$ & defined                  & absent \\
+  Imminent set          & all simultaneous & one (SELECT)    & all simultaneous & one per variable \\
+  Tie-breaking          & confluence       & SELECT function & confluence       & per-variable $\sigma$ \\
+  SELECT                & absent           & required        & absent           & absent \\
+  Message carrier       & bag (\texttt{vector<T>}) & box (at most one) & bag & bag \\
+  $\delta_{\text{con}}$ & defined          & absent          & defined          & defined \\
+  $ta(s)$ type          & deterministic    & deterministic   & random variable  & $\Delta q/|u|$ \\
+  State approx.         & exact            & exact           & exact            & quantized ($\Delta q$) \\
+  Typical use           & discrete events  & discrete events & stochastic models & ODE integration \\
   \bottomrule
 \end{tabular}
 \end{center}}
 
 % ─────────────────────────────────────────────────────────────────────────────
+\subsection*{Cadmium STDEVS}
+
+Stochastic DEVS (STDEVS)~\cite{CKW10} extends PDEVS by allowing the time
+advance function $ta(s)$ to return a sample from a probability distribution
+rather than a deterministic value, and the transition functions
+$\delta_{\text{int}}$, $\delta_{\text{ext}}$, and $\delta_{\text{con}}$ to
+depend on random draws as well.  The PDEVS simulation algorithm is
+otherwise unchanged: the simulation engine always receives a concrete
+(already-sampled) time advance, so it treats the value as deterministic
+from that point on.
+
+In Cadmium, STDEVS models are written as ordinary PDEVS atomic models
+whose C++ implementations call a random-number generator during
+transition or time-advance evaluation.  No special engine mode is
+required; the stochastic behaviour lives entirely in the model code.
+Ensemble statistics are obtained by running the same coupled model
+multiple times and collecting outputs.  The \texttt{TIME} type is
+typically \texttt{double} because inter-arrival and service times are
+drawn from continuous distributions.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\subsection*{Cadmium QSS1}
+
+Quantized State Systems of order~1 (QSS1)~\cite{K04} integrate systems of
+ODEs by representing each state variable $x_i$ as a DEVS atomic model
+called a \emph{quantized integrator}.  The integrator maintains a
+piecewise-constant approximation $q_i$ of $x_i$, updated in discrete
+jumps of size $\Delta q_i$.
+
+\paragraph{Quantized integrator dynamics.}
+Given the current derivative $u_i$ (received as an external input) and the
+current quantized state $q_i$, the time advance to the next quantization
+boundary crossing is:
+\[
+  \sigma_i = \frac{\Delta q_i}{\lvert u_i \rvert}, \quad
+  \sigma_i = \infty \text{ when } u_i = 0.
+\]
+At $\sigma_i$ the integrator fires, updates $q_i \leftarrow q_i +
+\operatorname{sgn}(u_i)\,\Delta q_i$, and emits the new value to all
+connected models.  Receiving models recompute their derivatives and, if
+they are also integrators, reschedule their own next event.
+
+\paragraph{Step-size control.}
+The quantization $\Delta q_i$ is the sole accuracy parameter: smaller
+$\Delta q_i$ gives higher accuracy and more events.  A lower bound
+$\Delta q_i > \delta_{\min}$ must be chosen large enough to prevent
+Zeno behaviour (infinite events in finite time) when the system has a
+stable equilibrium at a quantization boundary.
+
+\paragraph{Cadmium implementation.}
+QSS1 models in this repository are standard Cadmium PDEVS atomic models
+where the time advance evaluates $\Delta q / \lvert u \rvert$.  The
+\texttt{TIME} type is \texttt{double}; passive state is encoded as
+\texttt{std::numeric\_limits<double>::infinity()}.  Derivative functions
+that combine outputs from multiple integrators are implemented as separate
+stateless atomic models receiving bags of values from connected ports.
+
+% ─────────────────────────────────────────────────────────────────────────────
 \subsection*{Port System}
 
-Both formalisms in Cadmium use a \textbf{strongly typed port system}.
+All four formalisms in Cadmium use a \textbf{strongly typed port system}.
 Each port is a distinct C++ type carrying a specific message type;
 couplings are expressed as \texttt{(sender-port, receiver-port)} pairs
 verified at compile time.  Port types are declared as:
