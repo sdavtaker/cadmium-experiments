@@ -44,6 +44,7 @@ endfunction()
 add_subdirectory(vdw14-pdevs)
 add_subdirectory(vdw14-devs)
 add_subdirectory(ckw10-lbm)
+add_subdirectory(ckw10-ncs)
 add_subdirectory(qss1-ball-downstairs)
 
 # Code Formatting
@@ -61,6 +62,8 @@ if(CLANG_FORMAT)
         "${CMAKE_CURRENT_SOURCE_DIR}/vdw14-devs/*.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/ckw10-lbm/*.hpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/ckw10-lbm/*.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/ckw10-ncs/*.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/ckw10-ncs/*.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/qss1-ball-downstairs/*.hpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/qss1-ball-downstairs/*.cpp"
     )
