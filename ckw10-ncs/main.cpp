@@ -43,6 +43,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <random>
 #include <string_view>
 
@@ -95,8 +96,6 @@ static double run_once(double tau_max, double t_end, RNG::result_type seed) {
     sensor<TIME, RNG> sen(H, V_ETA);
     nird<TIME, RNG> nd(tau_max);
     hold_ctrl<TIME> hc;
-
-    sen.state.sigma = H; // first sample at t=H
 
     RNG rng(seed);
 

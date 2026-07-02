@@ -39,19 +39,15 @@ namespace ckw10_ncs {
         const double H;     // sampling period (seconds)
         const double v_eta; // noise variance
 
-        sensor(double period, double noise_variance) : H(period), v_eta(noise_variance) {}
+        sensor(double period, double noise_variance)
+            : H(period), v_eta(noise_variance), state{0.0, 0.0, period} {}
 
         struct state_type {
-            double y_held = 0.0;
-            double eta    = 0.0;
-            double sigma  = 0.0; // overwritten in constructor below
+            double y_held;
+            double eta;
+            double sigma; // time to next sample; initialized to H in constructor
         };
-        state_type state{};
-
-        // sigma is set after construction to H so first sample is at t=H.
-        void init(double period) {
-            state.sigma = period;
-        }
+        state_type state;
 
         using input_ports  = std::tuple<sensor_defs::in_y>;
         using output_ports = std::tuple<sensor_defs::out_y>;
