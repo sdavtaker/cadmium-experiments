@@ -68,6 +68,42 @@ $\lambda'^{\text{th}}$ & $\lambda'^{\text{sim}}$ \\
 \end{table}
 
 \clearpage
+\section{CKW10 §7.3 Networked Control System (STDEVS + QSS1)}
+\label{sec:ckw10-ncs}
+\input{../ckw10-ncs/spec}
+
+\subsection*{Simulation Results}
+\label{sec:ckw10-ncs-results}
+
+Table~\ref{tab:ckw10-ncs} reports the mean, minimum, and maximum MSE over
+15 replications for each $\tau_{\max}$ value ($T=10\,000$\,s, $\Delta q=0.01$,
+seed base~42).  MSE rises sharply between $\tau_{\max}=0.7$ and $0.8$\,s:
+at $\tau_{\max}=0.8\,\mathrm{s}=h$ the sampled-data loop loses stability,
+consistent with the PowerDEVS curves in CKW10~Figure~7.
+
+\begin{table}[h!]
+\centering
+\caption{CKW10 NCS: MSE vs.\ $\tau_{\max}$ (mean $\pm$ range over 15 runs).}
+\label{tab:ckw10-ncs}
+\footnotesize
+\begin{tabular}{r|rrr}
+\toprule
+$\tau_{\max}$ (s) & MSE mean & MSE min & MSE max \\
+\midrule
+0.1 & 0.003010 & 0.002853 & 0.003159 \\
+0.2 & 0.003757 & 0.003517 & 0.003949 \\
+0.3 & 0.004873 & 0.004441 & 0.005191 \\
+0.4 & 0.006747 & 0.005956 & 0.007188 \\
+0.5 & 0.010314 & 0.008720 & 0.011120 \\
+0.6 & 0.018978 & 0.015354 & 0.021461 \\
+0.7 & 0.053408 & 0.040479 & 0.062271 \\
+0.8 & 4.634857 & 0.496628 & 46.862849 \\
+\bottomrule
+\multicolumn{4}{l}{\footnotesize Run \texttt{ckw10-ncs} to reproduce.}
+\end{tabular}
+\end{table}
+
+\clearpage
 \section{K04 §4.2 Bouncing Ball Downstairs (QSS1)}
 \label{sec:k04-ball}
 \input{../qss1-ball-downstairs/results}
