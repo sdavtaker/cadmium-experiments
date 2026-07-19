@@ -46,6 +46,7 @@ add_subdirectory(vdw14-devs)
 add_subdirectory(ckw10-lbm)
 add_subdirectory(ckw10-ncs)
 add_subdirectory(qss1-ball-downstairs)
+add_subdirectory(bittorrent-utp)
 
 # Code Formatting
 find_program(CLANG_FORMAT
@@ -66,6 +67,8 @@ if(CLANG_FORMAT)
         "${CMAKE_CURRENT_SOURCE_DIR}/ckw10-ncs/*.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/qss1-ball-downstairs/*.hpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/qss1-ball-downstairs/*.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/bittorrent-utp/*.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/bittorrent-utp/*.cpp"
     )
 
     add_custom_target(experiments-format

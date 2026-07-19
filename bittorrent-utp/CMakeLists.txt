@@ -1,0 +1,8 @@
+# BitTorrent/uTP swarm propagation experiment (staged build-up).
+# Stage 2a: uTP message types + deterministic bottleneck channel.
+
+add_executable(bt-utp-tests test/test_msg_channel.cpp)
+target_include_directories(bt-utp-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_options(bt-utp-tests PRIVATE -Wall -Wextra -pedantic)
+target_link_libraries(bt-utp-tests PRIVATE cadmium::cadmium Catch2::Catch2WithMain)
+add_test(NAME bt-utp-tests COMMAND bt-utp-tests)
