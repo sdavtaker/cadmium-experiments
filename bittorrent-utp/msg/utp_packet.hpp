@@ -64,9 +64,12 @@ namespace bt_utp {
 
         /// Bytes this packet occupies on the wire (header + extension +
         /// abstracted payload) — the quantity channels and cwnd account.
+        /// Only ST_DATA carries a data payload per BEP 29; payload_size is
+        /// ignored for every other packet type.
         [[nodiscard]] std::uint64_t wire_size() const {
-            const std::uint64_t ext = sack_mask.empty() ? 0 : 2 + sack_mask.size();
-            return utp_header_bytes + ext + payload_size;
+            const std::uint64_t ext  = sack_mask.empty() ? 0 : 2 + sack_mask.size();
+            const std::uint64_t data = type == packet_type::st_data ? payload_size : 0;
+            return utp_header_bytes + ext + data;
         }
 
         friend bool operator==(const utp_packet &, const utp_packet &) = default;

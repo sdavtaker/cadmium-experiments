@@ -57,6 +57,11 @@ TEST_CASE("utp_packet wire size accounts header, extension, and payload") {
 
     p.sack_mask = {0x01, 0x00, 0x00, 0x00};
     CHECK(p.wire_size() == bt_utp::utp_header_bytes + 2 + 4 + 1000);
+
+    // Only ST_DATA carries payload (BEP 29); a stray payload_size on a pure
+    // ACK must not inflate byte accounting.
+    p.type = packet_type::st_state;
+    CHECK(p.wire_size() == bt_utp::utp_header_bytes + 2 + 4);
 }
 
 TEST_CASE("message types stream to non-empty human-readable text") {

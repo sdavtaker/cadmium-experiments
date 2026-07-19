@@ -18,6 +18,7 @@
 #include <cadmium/modeling/ports.hpp>
 
 #include "../../msg/net_frame.hpp"
+#include <concepts>
 #include <cstdint>
 #include <deque>
 #include <limits>
@@ -31,7 +32,10 @@ namespace bt_utp {
         struct out : public cadmium::out_port<net_frame> {};
     };
 
-    template <typename TIME> class bottleneck_channel {
+    // This experiment line fixes simulation time to a floating-point type
+    // (seconds as double); the constraint makes that assumption explicit
+    // rather than failing obscurely under the repo's non-float TIME variants.
+    template <std::floating_point TIME> class bottleneck_channel {
         using defs = bottleneck_channel_defs;
 
       public:
