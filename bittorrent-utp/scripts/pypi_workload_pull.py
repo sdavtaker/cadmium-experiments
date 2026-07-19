@@ -56,26 +56,32 @@ def zipf_fit(counts):
 
 
 def latest_release_size(project: str):
-    """Bytes of the preferred install artifact of the latest release.
+    """Bytes of a deterministic install artifact of the latest release.
 
-    Preference: first bdist_wheel (what pip installs on most platforms),
-    falling back to sdist.
+    The PyPI JSON API's url order is not documented as stable, so pick the
+    lexicographically first wheel filename (deterministic across runs and a
+    reasonable proxy for what pip installs), falling back to the
+    lexicographically first artifact of any type.
     """
     d = fetch_json(f"https://pypi.org/pypi/{project}/json", timeout=20)
     urls = d.get("urls", [])
-    wheels = [u["size"] for u in urls if u.get("packagetype") == "bdist_wheel"]
+    wheels = sorted(
+        (u.get("filename", ""), u["size"]) for u in urls if u.get("packagetype") == "bdist_wheel"
+    )
     if wheels:
-        return wheels[0]
-    if urls:
-        return urls[0]["size"]
+        return wheels[0][1]
+    artifacts = sorted((u.get("filename", ""), u["size"]) for u in urls)
+    if artifacts:
+        return artifacts[0][1]
     return None
 
 
 def percentile(sorted_vals, q):
+    """Nearest-rank percentile (avoids banker's-rounding index surprises)."""
     if not sorted_vals:
         return None
-    idx = min(len(sorted_vals) - 1, max(0, round(q * (len(sorted_vals) - 1))))
-    return sorted_vals[idx]
+    idx = max(0, math.ceil(q * len(sorted_vals)) - 1)
+    return sorted_vals[min(idx, len(sorted_vals) - 1)]
 
 
 def weighted_percentile(pairs, q):
@@ -96,7 +102,10 @@ def weighted_percentile(pairs, q):
 
 
 def main():
-    top = fetch_json(TOP_URL)
+    try:
+        top = fetch_json(TOP_URL)
+    except Exception as exc:
+        die(f"failed to fetch top-pypi dataset: {exc}")
     rows = [r for r in top.get("rows", []) if r.get("download_count", 0) > 0]
     if len(rows) < 2:
         die(f"dataset malformed: {len(rows)} rows with positive download counts")
