@@ -66,6 +66,23 @@ def percentile(sorted_vals, q):
     return sorted_vals[idx]
 
 
+def weighted_percentile(pairs, q):
+    """Exact weighted percentile: pairs = [(value, weight)], weights > 0.
+
+    Returns the smallest value whose cumulative weight share reaches q.
+    """
+    if not pairs:
+        return None
+    ordered = sorted(pairs)
+    total = sum(w for _, w in ordered)
+    cum = 0.0
+    for value, weight in ordered:
+        cum += weight
+        if cum >= q * total:
+            return value
+    return ordered[-1][0]
+
+
 def main():
     top = fetch_json(TOP_URL)
     rows = top["rows"]
@@ -97,7 +114,7 @@ def main():
         project = rows[rank - 1]["project"]
         try:
             size = latest_release_size(project)
-        except Exception as exc:  # noqa: BLE001 - survey must survive odd packages
+        except Exception as exc:  # survey must survive odd/yanked packages
             print(f"warn: {project}: {exc}", file=sys.stderr)
             size = None
         if size is not None:
@@ -105,11 +122,8 @@ def main():
         time.sleep(PACING_S)
 
     plain = sorted(b for _, _, b in sizes)
-    # Download-weighted: weight each sampled size by its rank's count
-    weighted = []
-    for rank, _, b in sizes:
-        weighted.extend([b] * max(1, int(1000 * rows[rank - 1]["download_count"] / counts[0])))
-    weighted.sort()
+    # Download-weighted: each sampled size weighted by its rank's exact count
+    weighted_pairs = [(b, float(rows[rank - 1]["download_count"])) for rank, _, b in sizes]
 
     result.update({
         "size_sample_n": len(sizes),
@@ -117,8 +131,8 @@ def main():
         "size_median": percentile(plain, 0.50),
         "size_p90": percentile(plain, 0.90),
         "size_max_sampled": plain[-1] if plain else None,
-        "size_weighted_median": percentile(weighted, 0.50),
-        "size_weighted_p90": percentile(weighted, 0.90),
+        "size_weighted_median": weighted_percentile(weighted_pairs, 0.50),
+        "size_weighted_p90": weighted_percentile(weighted_pairs, 0.90),
         "size_samples": [
             {"rank": r, "project": p, "bytes": b} for r, p, b in sizes
         ],
