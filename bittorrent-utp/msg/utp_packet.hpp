@@ -56,8 +56,10 @@ namespace bt_utp {
         std::uint16_t seq_nr{};
         std::uint16_t ack_nr{};
         /// Selective ACK bitmask (BEP 29 extension 1). Empty = extension
-        /// absent. First bit acks seq ack_nr + 2; size must be a multiple
-        /// of 4 bytes when present.
+        /// absent. First bit acks seq ack_nr + 2. BEP 29 requires the
+        /// serialized mask to be a multiple of 4 bytes; this struct does
+        /// not enforce that — the socket model that builds masks owns the
+        /// padding (wire_size() charges whatever length is present).
         std::vector<std::uint8_t> sack_mask{};
         /// Abstracted data payload: byte count only (0 for non-ST_DATA).
         std::uint64_t payload_size{};

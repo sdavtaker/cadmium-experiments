@@ -32,9 +32,10 @@ namespace bt_utp {
         struct out : public cadmium::out_port<net_frame> {};
     };
 
-    // This experiment line fixes simulation time to a floating-point type
-    // (seconds as double); the constraint makes that assumption explicit
-    // rather than failing obscurely under the repo's non-float TIME variants.
+    // This experiment line uses floating-point simulation time in seconds
+    // (double in practice; any std::floating_point type satisfies the
+    // constraint). The constraint makes the assumption explicit rather than
+    // failing obscurely under the repo's non-arithmetic TIME variants.
     template <std::floating_point TIME> class bottleneck_channel {
         using defs = bottleneck_channel_defs;
 
