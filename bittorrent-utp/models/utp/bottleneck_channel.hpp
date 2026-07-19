@@ -22,6 +22,7 @@
 #include <deque>
 #include <limits>
 #include <ostream>
+#include <stdexcept>
 
 namespace bt_utp {
 
@@ -42,7 +43,14 @@ namespace bt_utp {
         bottleneck_channel(TIME prop_delay, TIME rate, std::uint64_t queue_capacity_bytes = 0,
                            std::uint64_t drop_every_nth = 0)
             : prop_delay_(prop_delay), rate_(rate), queue_capacity_bytes_(queue_capacity_bytes),
-              drop_every_nth_(drop_every_nth) {}
+              drop_every_nth_(drop_every_nth) {
+            if (!(rate_ > TIME{})) {
+                throw std::invalid_argument("bottleneck_channel: rate must be > 0");
+            }
+            if (prop_delay_ < TIME{}) {
+                throw std::invalid_argument("bottleneck_channel: prop_delay must be >= 0");
+            }
+        }
 
         struct in_transit {
             TIME delivery_rem; // time until the frame exits the far end

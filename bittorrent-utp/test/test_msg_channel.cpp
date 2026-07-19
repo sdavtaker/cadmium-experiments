@@ -125,6 +125,12 @@ TEST_CASE("bottleneck channel: finite queue tail-drops on overflow") {
     CHECK(ch.state.pending.size() == 1);
 }
 
+TEST_CASE("bottleneck channel: invalid construction parameters are rejected") {
+    CHECK_THROWS_AS(channel_t(0.05, 0.0), std::invalid_argument);
+    CHECK_THROWS_AS(channel_t(0.05, -1.0), std::invalid_argument);
+    CHECK_THROWS_AS(channel_t(-0.01, 1000.0), std::invalid_argument);
+}
+
 TEST_CASE("bottleneck channel: state streams to log-friendly text") {
     channel_t ch{0.05, 1000.0};
     ch.external_transition(0.0, box_with(make_frame(1, 100)));
