@@ -21,6 +21,10 @@ SIZE_SAMPLE = 48  # log-spaced ranks sampled for artifact size
 PACING_S = 1.0    # politeness delay between PyPI JSON API calls
 
 
+def die(msg: str):
+    sys.exit(f"error: {msg}")
+
+
 def fetch_json(url: str, timeout: float = 30.0):
     req = urllib.request.Request(url, headers={"User-Agent": "research-workload-pull/0.1"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -28,7 +32,13 @@ def fetch_json(url: str, timeout: float = 30.0):
 
 
 def zipf_fit(counts):
-    """OLS fit of log(count) = a - s*log(rank); returns (s, r_squared)."""
+    """OLS fit of log(count) = a - s*log(rank); returns (s, r_squared).
+
+    Counts must be strictly positive (main filters the dataset); degenerate
+    inputs abort with a clear message instead of a math traceback.
+    """
+    if len(counts) < 2:
+        die("zipf_fit needs at least 2 positive download counts")
     xs = [math.log(i + 1) for i in range(len(counts))]
     ys = [math.log(c) for c in counts]
     n = len(xs)
@@ -40,6 +50,8 @@ def zipf_fit(counts):
     a = my - slope * mx
     ss_res = sum((y - (a + slope * x)) ** 2 for x, y in zip(xs, ys))
     ss_tot = sum((y - my) ** 2 for y in ys)
+    if ss_tot == 0.0:  # all counts identical: flat fit, R^2 undefined
+        return -slope, 1.0
     return -slope, 1.0 - ss_res / ss_tot
 
 
@@ -85,13 +97,15 @@ def weighted_percentile(pairs, q):
 
 def main():
     top = fetch_json(TOP_URL)
-    rows = top["rows"]
+    rows = [r for r in top.get("rows", []) if r.get("download_count", 0) > 0]
+    if len(rows) < 2:
+        die(f"dataset malformed: {len(rows)} rows with positive download counts")
     counts = [r["download_count"] for r in rows]
 
     s_all, r2_all = zipf_fit(counts)
     s_1k, r2_1k = zipf_fit(counts[:1000])
 
-    total_30d = sum(counts)
+    total_30d = sum(counts)  # > 0: rows filtered to positive counts above
     result = {
         "dataset_last_update": top.get("last_update"),
         "n_packages": len(rows),
@@ -106,9 +120,10 @@ def main():
         "top1000_share": round(sum(counts[:1000]) / total_30d, 4),
     }
 
-    # Log-spaced ranks: 1 .. n-1
+    # Log-spaced ranks: 1 .. n-1 (n >= 2 guaranteed above; SIZE_SAMPLE >= 2)
     n = len(rows)
-    ranks = sorted({int(round(math.exp(math.log(n - 1) * i / (SIZE_SAMPLE - 1)))) for i in range(SIZE_SAMPLE)})
+    n_points = max(2, SIZE_SAMPLE)
+    ranks = sorted({int(round(math.exp(math.log(n - 1) * i / (n_points - 1)))) for i in range(n_points)})
     sizes = []          # (rank, project, bytes)
     for rank in ranks:
         project = rows[rank - 1]["project"]
