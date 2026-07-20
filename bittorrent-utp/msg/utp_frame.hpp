@@ -12,14 +12,13 @@
  */
 #pragma once
 
+#include "peer_id.hpp"
 #include "utp_packet.hpp"
 #include <cstdint>
 #include <ostream>
 #include <vector>
 
 namespace bt_utp {
-
-    using peer_id = std::uint32_t;
 
     template <typename PAYLOAD> struct utp_frame {
         peer_id src{};
