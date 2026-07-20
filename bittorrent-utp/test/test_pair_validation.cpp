@@ -93,11 +93,23 @@ namespace {
         cadmium::get_message<typename sdefs::net_in>(box).emplace(f);
         return box;
     }
+    /// Combines an optional net_in frame and an optional app_send request
+    /// into a single input bag, so a socket that receives both at the same
+    /// simulation instant gets one external_transition call — matching
+    /// utp_socket's own net_in-before-app_send ordering internally, instead
+    /// of the harness driving two separate calls in whichever order it
+    /// happens to route them.
     template <SimTime TIME>
     typename cadmium::make_message_box<typename sock_t<TIME>::input_ports>::type
-    sock_send_box(const typename sdefs::send_req &req) {
+    sock_combined_box(const std::optional<frame_t> &net_in_frame,
+                      const std::optional<typename sdefs::send_req> &send_req_msg) {
         typename cadmium::make_message_box<typename sock_t<TIME>::input_ports>::type box;
-        cadmium::get_message<typename sdefs::app_send>(box).emplace(req);
+        if (net_in_frame.has_value()) {
+            cadmium::get_message<typename sdefs::net_in>(box).emplace(*net_in_frame);
+        }
+        if (send_req_msg.has_value()) {
+            cadmium::get_message<typename sdefs::app_send>(box).emplace(*send_req_msg);
+        }
         return box;
     }
     template <SimTime TIME>
@@ -140,8 +152,11 @@ namespace {
                        : last + sigma;
         }
 
-        /// Runs until quiescent (all atoms passive) or t_max, whichever
-        /// comes first. Returns the final simulation time reached.
+        /// Advances until either every atom is passive (next event time is
+        /// infinity) or the next event time would exceed t_max, whichever
+        /// comes first — in the t_max case, the last event actually
+        /// processed can be earlier than t_max, not t_max itself. Returns
+        /// that final simulation time reached.
         TIME run(TIME t_max) {
             for (;;) {
                 const TIME an_source = abs_next(last_source, source.time_advance());
@@ -219,14 +234,16 @@ namespace {
 
                 // Route: source -> a (app_send), ab.out -> b (net_in),
                 // ba.out -> a (net_in), a.net_out -> ab (in),
-                // b.net_out -> ba (in). A component that is BOTH imminent
-                // and a receiver this same instant (e.g. a fires
-                // internally and also receives a routed frame) gets a
-                // second external_transition call at elapsed=0, matching
-                // classic-DEVS external-input semantics after an internal
-                // event at the same instant.
-                if (src_out.has_value()) {
-                    a.external_transition(now - last_a, sock_send_box<TIME>(*src_out));
+                // b.net_out -> ba (in). A can receive both src_out
+                // (app_send) and ba_out (net_in) at the same instant, so
+                // those two are combined into a single input bag and
+                // delivered via one external_transition call — matching
+                // classic-DEVS "simultaneous inputs on multiple ports are
+                // one event" semantics and utp_socket's own internal
+                // net_in-before-app_send ordering (see utp_socket.hpp),
+                // rather than driving two separate calls in routing order.
+                if (src_out.has_value() || ba_out.has_value()) {
+                    a.external_transition(now - last_a, sock_combined_box<TIME>(ba_out, src_out));
                     last_a = now;
                 }
                 if (a_out_net.has_value()) {
@@ -240,10 +257,6 @@ namespace {
                 if (b_out_net.has_value()) {
                     ba.external_transition(now - last_ba, chan_box<TIME>(*b_out_net));
                     last_ba = now;
-                }
-                if (ba_out.has_value()) {
-                    a.external_transition(now - last_a, sock_frame_box<TIME>(*ba_out));
-                    last_a = now;
                 }
                 if (b_out_deliver.has_value()) {
                     delivered_b.push_back(*b_out_deliver);

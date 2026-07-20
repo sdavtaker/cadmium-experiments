@@ -87,7 +87,7 @@ namespace bt_utp {
     struct seconds_converter<cdcommons::time::decimal<Exp, Raw>> {
         using time_type = cdcommons::time::decimal<Exp, Raw>;
         static time_type convert(double seconds) {
-            const double scale = std::pow(10.0, -Exp);
+            static const double scale = std::pow(10.0, -Exp);
             return time_type::from_scaled(static_cast<Raw>(std::llround(seconds * scale)));
         }
     };
@@ -109,6 +109,7 @@ namespace cadmium::log {
         if (t == std::numeric_limits<T>::neg_infinity()) {
             return -std::numeric_limits<double>::infinity();
         }
-        return static_cast<double>(t.raw_value()) * std::pow(10.0, Exp);
+        static const double scale = std::pow(10.0, Exp);
+        return static_cast<double>(t.raw_value()) * scale;
     }
 } // namespace cadmium::log
