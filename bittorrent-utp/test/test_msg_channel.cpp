@@ -21,6 +21,7 @@
 #include <stdexcept>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 
 namespace {
 
@@ -151,8 +152,9 @@ TEST_CASE("net_frame and utp_frame share one peer_id definition without conflict
     // Compile-time regression: both frame headers are included in this TU
     // (see the includes above); this only builds if their peer_id usages
     // resolve to the single shared alias in peer_id.hpp without collision.
-    static_assert(std::is_same_v<decltype(net_frame::src), bt_utp::peer_id>);
-    static_assert(std::is_same_v<decltype(bt_utp::utp_frame<int>::src), bt_utp::peer_id>);
+    static_assert(std::is_same_v<decltype(std::declval<net_frame>().src), bt_utp::peer_id>);
+    static_assert(
+        std::is_same_v<decltype(std::declval<bt_utp::utp_frame<int>>().src), bt_utp::peer_id>);
     bt_utp::peer_id id = 7;
     net_frame f{};
     f.src = id;
