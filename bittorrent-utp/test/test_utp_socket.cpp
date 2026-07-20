@@ -216,6 +216,57 @@ TEST_CASE("utp_socket: three duplicate acks trigger fast retransmit and window c
     CHECK(h.a.connection(2)->cwnd < cwnd_pre);
 }
 
+TEST_CASE("utp_socket: dup-ack counter resets when ack_nr changes without acking new data") {
+    utp_constants k = big_window(4000);
+    pair_harness h{k, k};
+    h.connect();
+
+    h.a.external_transition(0.0, send_box(2, app_chunk{1, 900}));
+    auto out = h.a.output();
+    h.a.internal_transition();
+    const auto lost = *cadmium::get_message<sdefs::net_out>(out);
+    REQUIRE(h.a.connection(2)->inflight.size() == 1);
+
+    auto ack_with = [&](std::uint16_t ack_nr) {
+        frame_t f{};
+        f.src               = 2;
+        f.dst               = 1;
+        f.pkt.type          = packet_type::st_state;
+        f.pkt.connection_id = h.a.connection(2)->conn_id_recv;
+        f.pkt.seq_nr        = h.b.connection(1)->seq_nr;
+        f.pkt.wnd_size      = 1 << 20;
+        f.pkt.ack_nr        = ack_nr;
+        return f;
+    };
+    // Both values ack nothing (below the single inflight packet's seq) and
+    // deliberately avoid connect()'s own last_ack_seen baseline: its DATA
+    // exchange leaves last_ack_seen at seq 2 (SYN=1, that DATA=2), and this
+    // test's packet is seq 3 — reusing "seq - 1" (= 2) as the first probed
+    // value would collide with that baseline and start counting duplicates
+    // a step early.
+    REQUIRE(h.a.connection(2)->last_ack_seen == static_cast<std::uint16_t>(lost.pkt.seq_nr - 1));
+    const std::uint16_t below = 1;
+    const std::uint16_t other = 0;
+
+    h.a.external_transition(0.0, frame_box(ack_with(below))); // establishes last_ack_seen
+    h.a.external_transition(0.0, frame_box(ack_with(below))); // dup 1
+    h.a.external_transition(0.0, frame_box(ack_with(below))); // dup 2
+    REQUIRE(h.a.connection(2)->dup_acks == 2);
+    REQUIRE(h.a.state.retransmits == 0); // threshold (3) not yet reached
+
+    // A different ack_nr appears once (e.g. a reordered/stale ack): must not
+    // count as a duplicate of anything, and must clear the stale counter.
+    h.a.external_transition(0.0, frame_box(ack_with(other)));
+    CHECK(h.a.connection(2)->dup_acks == 0);
+
+    // Two more occurrences of the ORIGINAL value must resume counting from
+    // zero, not silently reuse the pre-reset count and fire early.
+    h.a.external_transition(0.0, frame_box(ack_with(below)));
+    h.a.external_transition(0.0, frame_box(ack_with(below)));
+    CHECK(h.a.connection(2)->dup_acks == 1);
+    CHECK(h.a.state.retransmits == 0);
+}
+
 TEST_CASE("utp_socket: selective-ack holes retransmit after three packets acked past") {
     utp_constants k = big_window(8000);
     pair_harness h{k, k};

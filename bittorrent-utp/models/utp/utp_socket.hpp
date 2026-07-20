@@ -277,6 +277,10 @@ namespace bt_utp {
             return it == state.conns.end() ? nullptr : &it->second;
         }
 
+        // Wrap-aware signed distance between two 16-bit sequence numbers.
+        // The unsigned-to-signed conversion below is well-defined modulo-2^16
+        // two's-complement wraparound as of C++20 ([conv.integral]), which
+        // this project requires (C++23) — not implementation-defined here.
         static std::int16_t seq_diff(std::uint16_t a, std::uint16_t b) {
             return static_cast<std::int16_t>(static_cast<std::uint16_t>(a - b));
         }
@@ -637,6 +641,12 @@ namespace bt_utp {
                         retransmit(dst, c, c.inflight.front());
                     }
                 }
+            } else {
+                // ack_nr changed without acking anything new (e.g. a
+                // reordered/stale ack) — clear the counter so a later
+                // duplicate of a *different* ack_nr value doesn't inherit
+                // a count it never actually accrued.
+                c.dup_acks = 0;
             }
             c.last_ack_seen = pkt.ack_nr;
         }
