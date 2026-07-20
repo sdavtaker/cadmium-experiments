@@ -11,6 +11,14 @@
  *
  * Classic DEVS atomic (no randomness); the STDEVS lossy_channel variant
  * replaces the drop pattern and adds delivery jitter with the same ports.
+ *
+ * Generic over the carried frame type FRAME (anything exposing
+ * wire_size()): defaults to net_frame, so every existing net_frame-based
+ * channel keeps its original port types unchanged. utp_socket's own
+ * net_in/net_out ports carry utp_frame<PAYLOAD> instead (it additionally
+ * tags which application payloads complete at each packet), so pairing a
+ * channel with a socket instantiates bottleneck_channel<TIME,
+ * utp_frame<PAYLOAD>>.
  */
 #pragma once
 
@@ -27,17 +35,22 @@
 
 namespace bt_utp {
 
-    struct bottleneck_channel_defs {
-        struct in : public cadmium::in_port<net_frame> {};
-        struct out : public cadmium::out_port<net_frame> {};
+    template <typename FRAME> struct bottleneck_channel_defs_t {
+        struct in : public cadmium::in_port<FRAME> {};
+        struct out : public cadmium::out_port<FRAME> {};
     };
+
+    /// Original name/type, preserved as an alias so every existing
+    /// net_frame-based channel (declared as bottleneck_channel<TIME>, i.e.
+    /// FRAME defaulted to net_frame) keeps identical port types.
+    using bottleneck_channel_defs = bottleneck_channel_defs_t<net_frame>;
 
     // This experiment line uses floating-point simulation time in seconds
     // (double in practice; any std::floating_point type satisfies the
     // constraint). The constraint makes the assumption explicit rather than
     // failing obscurely under the repo's non-arithmetic TIME variants.
-    template <std::floating_point TIME> class bottleneck_channel {
-        using defs = bottleneck_channel_defs;
+    template <std::floating_point TIME, typename FRAME = net_frame> class bottleneck_channel {
+        using defs = bottleneck_channel_defs_t<FRAME>;
 
       public:
         /// prop_delay: one-way propagation delay added after service.
@@ -60,7 +73,7 @@ namespace bt_utp {
         struct in_transit {
             TIME delivery_rem; // time until the frame exits the far end
             TIME service_rem;  // time until the frame clears the server
-            net_frame frame;
+            FRAME frame;
         };
 
         struct state_type {
@@ -90,8 +103,8 @@ namespace bt_utp {
         };
         state_type state{};
 
-        using input_ports  = std::tuple<defs::in>;
-        using output_ports = std::tuple<defs::out>;
+        using input_ports  = std::tuple<typename defs::in>;
+        using output_ports = std::tuple<typename defs::out>;
 
         void internal_transition() {
             const TIME sigma = time_advance();
@@ -105,11 +118,11 @@ namespace bt_utp {
         void external_transition(TIME elapsed,
                                  typename cadmium::make_message_box<input_ports>::type box) {
             age(elapsed);
-            const auto &slot = cadmium::get_message<defs::in>(box);
+            const auto &slot = cadmium::get_message<typename defs::in>(box);
             if (!slot.has_value()) {
                 return;
             }
-            const net_frame &frame = *slot;
+            const FRAME &frame = *slot;
             ++state.received;
             ++state.arrivals;
             if (drop_every_nth_ != 0 && state.arrivals % drop_every_nth_ == 0) {
@@ -129,7 +142,7 @@ namespace bt_utp {
         typename cadmium::make_message_box<output_ports>::type output() const {
             typename cadmium::make_message_box<output_ports>::type box;
             if (!state.pending.empty()) {
-                cadmium::get_message<defs::out>(box).emplace(state.pending.front().frame);
+                cadmium::get_message<typename defs::out>(box).emplace(state.pending.front().frame);
             }
             return box;
         }
