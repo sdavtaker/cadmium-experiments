@@ -15,18 +15,28 @@
  * RationalTime (../../rational_time.hpp) was tried first and rejected:
  * its naive long long numerator/denominator overflows within ~30-40
  * chained heterogeneous-denominator operations (confirmed with UBSan on a
- * probe mirroring this model's own RTT EWMA update), which a real
- * transfer's RTT/RTO update count exceeds by a wide margin. decimal's
- * fixed scale sidesteps that failure mode entirely — see
- * memory-vault-kdag and wiki/concepts/concept-time-representation-des.md.
+ * probe mirroring an RTT-EWMA-shaped update), which a real transfer's
+ * update count exceeds by a wide margin. decimal's fixed scale sidesteps
+ * that failure mode entirely — see memory-vault-kdag and
+ * wiki/concepts/concept-time-representation-des.md.
  *
- * decimal has neither operator/ nor a static_cast-invokable integer
- * constructor (only the named factories from_scaled/from_whole), so this
- * experiment line's models must not assume either is available generically
- * — hence no division/construction requirement in the concept itself, and
- * the two customization points below (seconds_converter, divide_by) that
- * every TIME type must specialize instead of relying on operators that not
- * every exact TIME type has.
+ * decimal deliberately has no operator/ (dividing a fixed-point value
+ * rarely lands on an exactly-representable result at the same scale, so
+ * the type doesn't offer an operation whose result would silently need
+ * rounding) and no static_cast-invokable integer constructor (only the
+ * named factories from_scaled/from_whole). This is not a gap to work
+ * around: the simulator/engine layer (state.now, last_activity,
+ * time_advance(), scheduling comparisons) never needs to divide a TIME
+ * value — only MODEL-internal arithmetic does (e.g. an RTT EWMA), and
+ * that arithmetic isn't operating on the scheduling clock's type to begin
+ * with. Model code should keep duration-like internal state (RTT
+ * estimates, smoothed averages, measured samples) in its own natural
+ * representation (double), exactly like any other model parameter, and
+ * convert explicitly at the one boundary where such a value needs to
+ * become — or came from — a scheduling-clock TIME: seconds_converter
+ * (double -> TIME, e.g. scheduling an RTO deadline) and
+ * cadmium::log::to_sim_double (TIME -> double, e.g. measuring an elapsed
+ * duration to feed back into an EWMA) are that pair of conversions.
  */
 #pragma once
 
@@ -36,7 +46,6 @@
 #include <cdcommons/time/decimal.hpp>
 #include <cmath>
 #include <concepts>
-#include <cstdint>
 #include <limits>
 
 namespace bt_utp {
@@ -74,23 +83,6 @@ namespace bt_utp {
             return time_type::from_scaled(static_cast<Raw>(std::llround(seconds * scale)));
         }
     };
-
-    /// Divides a TIME duration by a small positive integer constant (used
-    /// for RTT EWMA weighting: rtt +/-= delta / 4, delta / 8). The default
-    /// uses operator/, which double and RationalTime both have; decimal has
-    /// no operator/ at all, so it gets its own overload operating directly
-    /// on the raw scaled integer — exact truncating integer division, with
-    /// no denominator or growth of any kind, unlike rational division.
-    template <typename TIME> TIME divide_by(TIME t, long long n) {
-        return t / static_cast<TIME>(n);
-    }
-
-    template <int Exp, std::signed_integral Raw>
-    cdcommons::time::decimal<Exp, Raw> divide_by(cdcommons::time::decimal<Exp, Raw> t,
-                                                 long long n) {
-        return cdcommons::time::decimal<Exp, Raw>::from_scaled(
-            static_cast<Raw>(t.raw_value() / static_cast<Raw>(n)));
-    }
 
 } // namespace bt_utp
 
