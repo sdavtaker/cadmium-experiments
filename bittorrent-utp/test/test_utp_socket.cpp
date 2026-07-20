@@ -155,6 +155,7 @@ TEST_CASE("utp_socket: LEDBAT backs off when measured delay exceeds target") {
     ack1.src                                   = 2;
     ack1.dst                                   = 1;
     ack1.pkt.type                              = packet_type::st_state;
+    ack1.pkt.connection_id                     = h.a.connection(2)->conn_id_recv;
     ack1.pkt.ack_nr                            = sent1.pkt.seq_nr;
     ack1.pkt.seq_nr                            = h.b.connection(1)->seq_nr;
     ack1.pkt.wnd_size                          = 1 << 20;
@@ -192,12 +193,13 @@ TEST_CASE("utp_socket: three duplicate acks trigger fast retransmit and window c
     const double cwnd_pre = h.a.connection(2)->cwnd;
 
     frame_t dup{};
-    dup.src          = 2;
-    dup.dst          = 1;
-    dup.pkt.type     = packet_type::st_state;
-    dup.pkt.seq_nr   = h.b.connection(1)->seq_nr;
-    dup.pkt.wnd_size = 1 << 20;
-    dup.pkt.ack_nr   = static_cast<std::uint16_t>(lost.pkt.seq_nr - 1); // acks nothing
+    dup.src               = 2;
+    dup.dst               = 1;
+    dup.pkt.type          = packet_type::st_state;
+    dup.pkt.connection_id = h.a.connection(2)->conn_id_recv;
+    dup.pkt.seq_nr        = h.b.connection(1)->seq_nr;
+    dup.pkt.wnd_size      = 1 << 20;
+    dup.pkt.ack_nr        = static_cast<std::uint16_t>(lost.pkt.seq_nr - 1); // acks nothing
     for (int i = 0; i < 4; ++i) { // 1 establishes last_ack_seen + 3 duplicates
         h.a.external_transition(0.0, frame_box(dup));
     }
@@ -229,14 +231,15 @@ TEST_CASE("utp_socket: selective-ack holes retransmit after three packets acked 
     // SACK acking packets first+1..first+3 (bits 0..2 relative ack_nr+2),
     // leaving the first as a hole with 3 packets acked past it.
     frame_t sack{};
-    sack.src              = 2;
-    sack.dst              = 1;
-    sack.pkt.type         = packet_type::st_state;
-    sack.pkt.seq_nr       = h.b.connection(1)->seq_nr;
-    sack.pkt.wnd_size     = 1 << 20;
-    sack.pkt.ack_nr       = static_cast<std::uint16_t>(first_seq - 1);
-    sack.pkt.sack_mask    = {0b00000111, 0, 0, 0};
-    const double cwnd_pre = h.a.connection(2)->cwnd;
+    sack.src               = 2;
+    sack.dst               = 1;
+    sack.pkt.type          = packet_type::st_state;
+    sack.pkt.connection_id = h.a.connection(2)->conn_id_recv;
+    sack.pkt.seq_nr        = h.b.connection(1)->seq_nr;
+    sack.pkt.wnd_size      = 1 << 20;
+    sack.pkt.ack_nr        = static_cast<std::uint16_t>(first_seq - 1);
+    sack.pkt.sack_mask     = {0b00000111, 0, 0, 0};
+    const double cwnd_pre  = h.a.connection(2)->cwnd;
     h.a.external_transition(0.0, frame_box(sack));
 
     CHECK(h.a.state.retransmits == 1);
@@ -294,14 +297,15 @@ TEST_CASE("utp_socket: FIN closes once every prior packet arrived") {
     h.connect();
 
     frame_t fin{};
-    fin.src          = 2;
-    fin.dst          = 1;
-    fin.pkt.type     = packet_type::st_fin;
-    fin.pkt.seq_nr   = h.b.connection(1)->seq_nr; // next in order
-    fin.pkt.wnd_size = 1 << 20;
-    fin.pkt.ack_nr   = h.a.connection(2)->seq_nr == 0
-                           ? std::uint16_t{0}
-                           : static_cast<std::uint16_t>(h.a.connection(2)->seq_nr - 1);
+    fin.src               = 2;
+    fin.dst               = 1;
+    fin.pkt.type          = packet_type::st_fin;
+    fin.pkt.connection_id = h.a.connection(2)->conn_id_recv;
+    fin.pkt.seq_nr        = h.b.connection(1)->seq_nr; // next in order
+    fin.pkt.wnd_size      = 1 << 20;
+    fin.pkt.ack_nr        = h.a.connection(2)->seq_nr == 0
+                                ? std::uint16_t{0}
+                                : static_cast<std::uint16_t>(h.a.connection(2)->seq_nr - 1);
     h.a.external_transition(0.0, frame_box(fin));
 
     CHECK(h.a.connection(2)->state == sock_t::conn_state::closed);
@@ -325,13 +329,71 @@ TEST_CASE("utp_socket: packets for unknown connections draw ST_RESET; reset kill
     CHECK(rst->pkt.type == packet_type::st_reset);
     CHECK(rst->dst == 99);
 
-    // Receiving ST_RESET on a live connection closes it.
+    // Receiving ST_RESET on a live connection (correct connection_id) closes it.
     frame_t reset{};
-    reset.src      = 2;
-    reset.dst      = 1;
-    reset.pkt.type = packet_type::st_reset;
+    reset.src               = 2;
+    reset.dst               = 1;
+    reset.pkt.type          = packet_type::st_reset;
+    reset.pkt.connection_id = h.a.connection(2)->conn_id_recv;
     h.a.external_transition(0.0, frame_box(reset));
     CHECK(h.a.connection(2)->state == sock_t::conn_state::closed);
+}
+
+TEST_CASE("utp_socket: a packet with the wrong connection_id is rejected, not accepted") {
+    pair_harness h{utp_constants{}, utp_constants{}};
+    h.connect();
+
+    const std::uint16_t expected_id = h.a.connection(2)->conn_id_recv;
+    const std::uint16_t stale_ack   = h.a.connection(2)->ack_nr;
+
+    // Known peer, but a connection_id that doesn't match what this socket
+    // expects to receive on: BEP 29 uses connection_id to disambiguate
+    // streams between the same pair of endpoints, so this must be treated
+    // as foreign traffic (draws ST_RESET), not folded into the live conn.
+    frame_t foreign{};
+    foreign.src               = 2;
+    foreign.dst               = 1;
+    foreign.pkt.type          = packet_type::st_data;
+    foreign.pkt.connection_id = static_cast<std::uint16_t>(expected_id + 1);
+    foreign.pkt.seq_nr        = static_cast<std::uint16_t>(stale_ack + 1);
+    foreign.pkt.wnd_size      = 1 << 20;
+    h.a.external_transition(0.0, frame_box(foreign));
+
+    auto out = h.a.output();
+    h.a.internal_transition();
+    const auto &rst = cadmium::get_message<sdefs::net_out>(out);
+    REQUIRE(rst.has_value());
+    CHECK(rst->pkt.type == packet_type::st_reset);
+
+    // The live connection is untouched: still connected, ack_nr unmoved.
+    CHECK(h.a.connection(2)->state == sock_t::conn_state::connected);
+    CHECK(h.a.connection(2)->ack_nr == stale_ack);
+}
+
+TEST_CASE("utp_socket: app_send reopens a fresh connection instead of dropping into a closed one") {
+    pair_harness h{utp_constants{}, utp_constants{}};
+    h.connect();
+
+    const std::uint16_t old_conn_id = h.a.connection(2)->conn_id_recv;
+
+    frame_t reset{};
+    reset.src               = 2;
+    reset.dst               = 1;
+    reset.pkt.type          = packet_type::st_reset;
+    reset.pkt.connection_id = old_conn_id;
+    h.a.external_transition(0.0, frame_box(reset));
+    REQUIRE(h.a.connection(2)->state == sock_t::conn_state::closed);
+
+    // A send to the same peer after close must not enqueue into the dead
+    // entry (packetize() only ever runs while CONNECTED, so a payload
+    // parked there would sit forever) — it must open a fresh connection.
+    h.a.external_transition(0.0, send_box(2, app_chunk{9, 500}));
+    const auto *fresh = h.a.connection(2);
+    REQUIRE(fresh != nullptr);
+    CHECK(fresh->state == sock_t::conn_state::syn_sent);
+    CHECK(fresh->conn_id_recv != old_conn_id);
+    CHECK(fresh->pending.size() == 1);
+    CHECK(fresh->pending.front().payload == app_chunk{9, 500});
 }
 
 TEST_CASE("utp_socket: state streams to log-friendly text") {

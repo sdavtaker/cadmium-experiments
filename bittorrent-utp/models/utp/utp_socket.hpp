@@ -308,7 +308,14 @@ namespace bt_utp {
 
         void handle_app_send(const send_req &req) {
             auto it = state.conns.find(req.dst);
-            if (it == state.conns.end()) {
+            if (it == state.conns.end() || it->second.state == conn_state::closed) {
+                // No connection, or the prior one is closed (FIN/RESET): a
+                // closed entry never re-opens on its own (packetize only
+                // runs while CONNECTED), so start a fresh connection rather
+                // than silently dropping the send into a dead entry.
+                if (it != state.conns.end()) {
+                    state.conns.erase(it);
+                }
                 it = open_initiator(req.dst);
             }
             conn &c = it->second;
@@ -399,8 +406,15 @@ namespace bt_utp {
                 return;
             }
             auto it = state.conns.find(f.src);
-            if (it == state.conns.end()) {
-                // Stale packet for unknown connection: reset per BEP 29.
+            // A packet whose connection_id doesn't match what this socket
+            // expects to receive on (our conn_id_recv, per the SYN exchange
+            // in open_initiator/accept_syn) is stale or mis-tagged — treat
+            // it exactly like an unknown connection rather than accepting it
+            // into a live one (BEP 29: connection_id disambiguates streams).
+            const bool known_and_matching =
+                it != state.conns.end() && pkt.connection_id == it->second.conn_id_recv;
+            if (!known_and_matching) {
+                // Stale/foreign packet: reset per BEP 29.
                 if (pkt.type != packet_type::st_reset) {
                     utp_packet rst{};
                     rst.type          = packet_type::st_reset;
