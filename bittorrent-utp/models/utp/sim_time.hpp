@@ -51,7 +51,9 @@
 namespace bt_utp {
 
     template <typename T>
-    concept SimTime = cadmium::concepts::Time<T>;
+    concept SimTime = cadmium::concepts::Time<T> && requires(const T &t) {
+        { cadmium::log::to_sim_double(t) } -> std::convertible_to<double>;
+    };
 
     /// Converts a config value expressed in seconds (as a human-written
     /// decimal, e.g. utp_constants::min_timeout, or a computed duration
@@ -63,8 +65,14 @@ namespace bt_utp {
     /// deliberate compile-time prompt rather than a silent, possibly-wrong
     /// conversion.
     template <SimTime TIME> struct seconds_converter {
+        static_assert(std::same_as<TIME, double>,
+                      "seconds_converter<TIME> has no generic definition for this TIME type "
+                      "— provide an explicit specialization (see the decimal<Exp,Raw> one "
+                      "below for the pattern) rather than relying on an incidental "
+                      "static_cast<TIME>(double) conversion.");
+
         static TIME convert(double seconds) {
-            return static_cast<TIME>(seconds);
+            return seconds;
         }
     };
 
