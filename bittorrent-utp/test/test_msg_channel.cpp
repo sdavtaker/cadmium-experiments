@@ -13,12 +13,15 @@
 
 #include "../models/utp/bottleneck_channel.hpp"
 #include "../msg/net_frame.hpp"
+#include "../msg/utp_frame.hpp" // together with net_frame.hpp: regression test for shared peer_id
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <tuple>
+#include <type_traits>
+#include <utility>
 
 namespace {
 
@@ -143,6 +146,19 @@ TEST_CASE("bottleneck channel: state streams to log-friendly text") {
     os << ch.state;
     CHECK(os.str().find("q:1") != std::string::npos);
     CHECK(os.str().find("rx:1") != std::string::npos);
+}
+
+TEST_CASE("net_frame and utp_frame share one peer_id definition without conflict") {
+    // Compile-time regression: both frame headers are included in this TU
+    // (see the includes above); this only builds if their peer_id usages
+    // resolve to the single shared alias in peer_id.hpp without collision.
+    static_assert(std::is_same_v<decltype(std::declval<net_frame>().src), bt_utp::peer_id>);
+    static_assert(
+        std::is_same_v<decltype(std::declval<bt_utp::utp_frame<int>>().src), bt_utp::peer_id>);
+    bt_utp::peer_id id = 7;
+    net_frame f{};
+    f.src = id;
+    CHECK(f.src == 7);
 }
 
 // ---------------------------------------------------------------------------

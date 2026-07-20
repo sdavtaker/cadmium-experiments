@@ -8,13 +8,12 @@
  */
 #pragma once
 
+#include "peer_id.hpp"
 #include "utp_packet.hpp"
 #include <cstdint>
 #include <ostream>
 
 namespace bt_utp {
-
-    using peer_id = std::uint32_t;
 
     struct net_frame {
         peer_id src{};
