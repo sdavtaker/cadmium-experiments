@@ -9,11 +9,11 @@
  * connection per peer pair, with real connection_id header semantics
  * (initiator picks recv id, send id = recv id + 1).
  *
- * BEP 29 gaps are resolved per libtorrent as documented in
- * wiki/sources/source-BEP29-utp-ledbat.md: gain 3000 B/RTT applied as
- * acked_bytes/in_flight window factor, slow start with ssthres exit on
- * delay >= target or loss, immediate ACKs (no delayed-ACK timer), loss
- * multiplier 0.5, timeout floor 500 ms / initial 1 s with doubling.
+ * BEP 29 gaps are resolved per the libtorrent reference implementation:
+ * gain 3000 B/RTT applied as acked_bytes/in_flight window factor, slow
+ * start with ssthres exit on delay >= target or loss, immediate ACKs (no
+ * delayed-ACK timer), loss multiplier 0.5, timeout floor 500 ms / initial
+ * 1 s with doubling.
  *
  * Deterministic stand-ins for spec-mandated randomness (connection ids and
  * the acceptor's initial seq_nr are random per BEP 29): a per-socket
@@ -22,13 +22,14 @@
  */
 #pragma once
 
+#include <cadmium/logger/cadmium_log.hpp>
 #include <cadmium/modeling/message_box.hpp>
 #include <cadmium/modeling/ports.hpp>
 
 #include "../../msg/utp_frame.hpp"
+#include "sim_time.hpp"
 #include <algorithm>
 #include <cmath>
-#include <concepts>
 #include <cstdint>
 #include <deque>
 #include <limits>
@@ -83,7 +84,28 @@ namespace bt_utp {
         int dup_ack_threshold       = 3;
     };
 
-    template <std::floating_point TIME, typename PAYLOAD> class utp_socket {
+    // SimTime (sim_time.hpp): double by default, but not restricted to
+    // std::floating_point — exact-arithmetic TIME types (e.g.
+    // cdcommons::time::decimal) must be usable too, since DEVS causality is
+    // only exact under exact arithmetic (source-VDW14-devs-time-datatype.md).
+    //
+    // TIME is exclusively the scheduling clock (state.now, last_activity,
+    // time_advance()). Model-internal quantities that merely happen to be
+    // duration-like — rtt, rtt_var, timeout (an EWMA over measured samples,
+    // inherently approximate) — are NOT TIME: they use the model's own
+    // natural representation (double, matching how a real uTP
+    // implementation computes them), same as utp_constants' own config
+    // values. decimal has no operator/ and division is rarely exact
+    // regardless, so it deliberately doesn't offer one; simulator/engine
+    // operations never need to divide a TIME value, only model-internal
+    // arithmetic does, and that arithmetic isn't TIME to begin with.
+    // seconds_converter<TIME> (a double duration -> TIME) and
+    // cadmium::log::to_sim_double (TIME -> a double duration) are the two
+    // explicit conversions at the one boundary this crosses: scheduling an
+    // RTO deadline from c.timeout (double) against c.last_activity (TIME),
+    // and measuring a sample RTT from state.now - sent_at (TIME) back into
+    // update_rtt's own double arithmetic.
+    template <SimTime TIME, typename PAYLOAD> class utp_socket {
       public:
         using defs        = utp_socket_defs_t<PAYLOAD>;
         using frame_t     = typename defs::frame_t;
@@ -156,9 +178,9 @@ namespace bt_utp {
             double cwnd              = 0.0; // bytes
             bool slow_start          = true;
             double ssthres           = 0.0;
-            double rtt               = 0.0;
-            double rtt_var           = 0.0;
-            double timeout           = 0.0;
+            double rtt               = 0.0; // model-internal EWMA state, not
+            double rtt_var           = 0.0; // TIME — see the class-level
+            double timeout           = 0.0; // doc comment above.
             int consecutive_timeouts = 0;
             TIME last_activity{};
             std::uint16_t last_ack_seen{};
@@ -207,9 +229,10 @@ namespace bt_utp {
             TIME best = std::numeric_limits<TIME>::infinity();
             for (const auto &[peer, c] : state.conns) {
                 if (timer_armed(c)) {
-                    const TIME deadline = c.last_activity + static_cast<TIME>(c.timeout);
-                    const TIME rem      = deadline > state.now ? deadline - state.now : TIME{};
-                    best                = rem < best ? rem : best;
+                    const TIME deadline =
+                        c.last_activity + seconds_converter<TIME>::convert(c.timeout);
+                    const TIME rem = deadline > state.now ? deadline - state.now : TIME{};
+                    best           = rem < best ? rem : best;
                 }
             }
             return best;
@@ -243,7 +266,7 @@ namespace bt_utp {
             // Timer expiry: retransmit on the (a) due connection(s).
             for (auto &[peer, c] : state.conns) {
                 if (timer_armed(c) &&
-                    !(c.last_activity + static_cast<TIME>(c.timeout) > state.now)) {
+                    !(c.last_activity + seconds_converter<TIME>::convert(c.timeout) > state.now)) {
                     on_timeout(peer, c);
                 }
             }
@@ -291,8 +314,8 @@ namespace bt_utp {
         }
 
         std::uint32_t now_micros() const {
-            return static_cast<std::uint32_t>(
-                static_cast<std::uint64_t>(std::llround(static_cast<double>(state.now) * 1e6)));
+            return static_cast<std::uint32_t>(static_cast<std::uint64_t>(
+                std::llround(cadmium::log::to_sim_double(state.now) * 1e6)));
         }
 
         utp_packet header_for(const conn &c, packet_type t) const {
@@ -609,7 +632,7 @@ namespace bt_utp {
                 const inflight_pkt &p = c.inflight.front();
                 acked_bytes += p.wire_bytes;
                 if (p.transmissions == 1) {
-                    update_rtt(c, static_cast<double>(state.now - p.sent_at));
+                    update_rtt(c, cadmium::log::to_sim_double(state.now - p.sent_at));
                 }
                 acked_new = true;
                 c.inflight.pop_front();
@@ -623,7 +646,7 @@ namespace bt_utp {
             if (acked_new) {
                 c.dup_acks             = 0;
                 c.consecutive_timeouts = 0;
-                c.timeout              = std::max(k_.min_timeout, c.rtt + 4.0 * c.rtt_var);
+                c.timeout = std::max(k_.min_timeout, c.rtt + 4.0 * c.rtt_var); // model-internal
                 if (acked_bytes > 0 && inflight_before > 0) {
                     const double delay_sample =
                         static_cast<double>(pkt.timestamp_difference_microseconds) * 1e-6;
@@ -665,7 +688,7 @@ namespace bt_utp {
                 if (sacked) {
                     acked_bytes += it->wire_bytes;
                     if (it->transmissions == 1) {
-                        update_rtt(c, static_cast<double>(state.now - it->sent_at));
+                        update_rtt(c, cadmium::log::to_sim_double(state.now - it->sent_at));
                     }
                     to_erase.push_back(it->seq);
                     acked_new = true;
@@ -700,6 +723,10 @@ namespace bt_utp {
             }
         }
 
+        // packet_rtt: a measured sample duration converted from the
+        // scheduling clock (state.now - sent_at, a TIME) into double via
+        // cadmium::log::to_sim_double at the call site — see the class-level
+        // doc comment on why rtt/rtt_var/timeout are double, not TIME.
         void update_rtt(conn &c, double packet_rtt) {
             const double delta = c.rtt - packet_rtt;
             c.rtt_var += (std::abs(delta) - c.rtt_var) / 4.0;
@@ -731,7 +758,8 @@ namespace bt_utp {
         }
 
         double base_delay(conn &c, double sample) {
-            const auto bucket = static_cast<std::int64_t>(static_cast<double>(state.now) / 60.0);
+            const auto bucket =
+                static_cast<std::int64_t>(cadmium::log::to_sim_double(state.now) / 60.0);
             if (c.base_hist.empty() || c.base_hist.back().first != bucket) {
                 c.base_hist.emplace_back(bucket, sample);
             } else if (sample < c.base_hist.back().second) {
@@ -782,7 +810,7 @@ namespace bt_utp {
         void on_timeout(peer_id peer, conn &c) {
             ++state.timeouts;
             ++c.consecutive_timeouts;
-            c.timeout *= 2.0;
+            c.timeout       = c.timeout * 2.0; // RTO doubling (model-internal double)
             c.cwnd          = static_cast<double>(k_.min_packet);
             c.last_activity = state.now;
             if (c.state == conn_state::syn_sent) {

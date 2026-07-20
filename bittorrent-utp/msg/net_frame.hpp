@@ -3,8 +3,7 @@
  * Addressed network frame: the unit every channel/topology model carries.
  *
  * src/dst addressing exists from the two-client stage onward so the stage-6
- * ISP-switch topology can route on dst without a message refactor
- * (wiki/concepts/concept-utp-devs-model.md, structural decision 2).
+ * ISP-switch topology can route on dst without a message refactor.
  */
 #pragma once
 

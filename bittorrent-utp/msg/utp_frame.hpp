@@ -6,9 +6,9 @@
  * messages whose final stream byte lies inside this packet ("completing").
  * Bodies are abstracted to sizes, so the payload objects ride the packet
  * that completes them and the receiver delivers each object once its byte
- * range is contiguous — the message-boundary-preserving byte stream
- * (wiki/concepts/concept-utp-devs-model.md, structural decision 4).
- * `completing` is modeling metadata: it adds no wire bytes.
+ * range is contiguous — the message-boundary-preserving byte stream is a
+ * deliberate structural choice for this model. `completing` is modeling
+ * metadata: it adds no wire bytes.
  */
 #pragma once
 

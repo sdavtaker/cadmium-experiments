@@ -11,6 +11,14 @@
  *
  * Classic DEVS atomic (no randomness); the STDEVS lossy_channel variant
  * replaces the drop pattern and adds delivery jitter with the same ports.
+ *
+ * Generic over the carried frame type FRAME (anything exposing
+ * wire_size()): defaults to net_frame, so every existing net_frame-based
+ * channel keeps its original port types unchanged. utp_socket's own
+ * net_in/net_out ports carry utp_frame<PAYLOAD> instead (it additionally
+ * tags which application payloads complete at each packet), so pairing a
+ * channel with a socket instantiates bottleneck_channel<TIME,
+ * utp_frame<PAYLOAD>>.
  */
 #pragma once
 
@@ -18,7 +26,7 @@
 #include <cadmium/modeling/ports.hpp>
 
 #include "../../msg/net_frame.hpp"
-#include <concepts>
+#include "sim_time.hpp"
 #include <cstdint>
 #include <deque>
 #include <limits>
@@ -27,29 +35,38 @@
 
 namespace bt_utp {
 
-    struct bottleneck_channel_defs {
-        struct in : public cadmium::in_port<net_frame> {};
-        struct out : public cadmium::out_port<net_frame> {};
+    template <typename FRAME> struct bottleneck_channel_defs_t {
+        struct in : public cadmium::in_port<FRAME> {};
+        struct out : public cadmium::out_port<FRAME> {};
     };
 
-    // This experiment line uses floating-point simulation time in seconds
-    // (double in practice; any std::floating_point type satisfies the
-    // constraint). The constraint makes the assumption explicit rather than
-    // failing obscurely under the repo's non-arithmetic TIME variants.
-    template <std::floating_point TIME> class bottleneck_channel {
-        using defs = bottleneck_channel_defs;
+    /// Original name/type, preserved as an alias so every existing
+    /// net_frame-based channel (declared as bottleneck_channel<TIME>, i.e.
+    /// FRAME defaulted to net_frame) keeps identical port types.
+    using bottleneck_channel_defs = bottleneck_channel_defs_t<net_frame>;
+
+    // SimTime (sim_time.hpp): double by default, but not restricted to
+    // std::floating_point — an exact-arithmetic TIME type (e.g.
+    // cdcommons::time::decimal) must be usable too, since DEVS causality is
+    // only exact under exact arithmetic (source-VDW14-devs-time-datatype.md).
+    template <SimTime TIME, typename FRAME = net_frame> class bottleneck_channel {
+        using defs = bottleneck_channel_defs_t<FRAME>;
 
       public:
         /// prop_delay: one-way propagation delay added after service.
-        /// rate: service rate in bytes per unit of TIME.
+        /// rate: service rate in bytes/second — a throughput, not a TIME
+        /// duration, so it stays double regardless of TIME (matching
+        /// utp_constants' own config values); the byte/rate division is
+        /// computed in double and converted once via seconds_converter, so
+        /// TIME types without operator/ (e.g. cdcommons decimal) work too.
         /// queue_capacity_bytes: tail-drop threshold; 0 = unbounded.
         /// drop_every_nth: deterministically drop every Nth arriving frame
         /// (the Nth, 2Nth, ...); 0 = disabled.
-        bottleneck_channel(TIME prop_delay, TIME rate, std::uint64_t queue_capacity_bytes = 0,
+        bottleneck_channel(TIME prop_delay, double rate, std::uint64_t queue_capacity_bytes = 0,
                            std::uint64_t drop_every_nth = 0)
             : prop_delay_(prop_delay), rate_(rate), queue_capacity_bytes_(queue_capacity_bytes),
               drop_every_nth_(drop_every_nth) {
-            if (!(rate_ > TIME{})) {
+            if (!(rate_ > 0.0)) {
                 throw std::invalid_argument("bottleneck_channel: rate must be > 0");
             }
             if (prop_delay_ < TIME{}) {
@@ -60,7 +77,7 @@ namespace bt_utp {
         struct in_transit {
             TIME delivery_rem; // time until the frame exits the far end
             TIME service_rem;  // time until the frame clears the server
-            net_frame frame;
+            FRAME frame;
         };
 
         struct state_type {
@@ -90,8 +107,8 @@ namespace bt_utp {
         };
         state_type state{};
 
-        using input_ports  = std::tuple<defs::in>;
-        using output_ports = std::tuple<defs::out>;
+        using input_ports  = std::tuple<typename defs::in>;
+        using output_ports = std::tuple<typename defs::out>;
 
         void internal_transition() {
             const TIME sigma = time_advance();
@@ -105,11 +122,11 @@ namespace bt_utp {
         void external_transition(TIME elapsed,
                                  typename cadmium::make_message_box<input_ports>::type box) {
             age(elapsed);
-            const auto &slot = cadmium::get_message<defs::in>(box);
+            const auto &slot = cadmium::get_message<typename defs::in>(box);
             if (!slot.has_value()) {
                 return;
             }
-            const net_frame &frame = *slot;
+            const FRAME &frame = *slot;
             ++state.received;
             ++state.arrivals;
             if (drop_every_nth_ != 0 && state.arrivals % drop_every_nth_ == 0) {
@@ -121,15 +138,17 @@ namespace bt_utp {
                 ++state.dropped_overflow;
                 return;
             }
-            const TIME service_rem = state.server_free_rem + static_cast<TIME>(size) / rate_;
-            state.server_free_rem  = service_rem;
+            const double service_seconds = static_cast<double>(size) / rate_;
+            const TIME service_rem =
+                state.server_free_rem + seconds_converter<TIME>::convert(service_seconds);
+            state.server_free_rem = service_rem;
             state.pending.push_back({service_rem + prop_delay_, service_rem, frame});
         }
 
         typename cadmium::make_message_box<output_ports>::type output() const {
             typename cadmium::make_message_box<output_ports>::type box;
             if (!state.pending.empty()) {
-                cadmium::get_message<defs::out>(box).emplace(state.pending.front().frame);
+                cadmium::get_message<typename defs::out>(box).emplace(state.pending.front().frame);
             }
             return box;
         }
@@ -155,7 +174,7 @@ namespace bt_utp {
         }
 
         TIME prop_delay_;
-        TIME rate_;
+        double rate_;
         std::uint64_t queue_capacity_bytes_;
         std::uint64_t drop_every_nth_;
     };
