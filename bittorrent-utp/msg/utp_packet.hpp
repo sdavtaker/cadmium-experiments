@@ -6,9 +6,6 @@
  * plus the optional Selective ACK extension. The data payload is abstracted
  * to a byte count (payload_size) per the project decision that only protocol
  * headers are modeled structurally; bodies are sizes.
- *
- * Sources: wiki/sources/source-BEP29-utp-ledbat.md,
- *          wiki/concepts/concept-utp-devs-model.md
  */
 #pragma once
 

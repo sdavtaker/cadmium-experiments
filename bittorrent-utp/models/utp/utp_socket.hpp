@@ -9,11 +9,11 @@
  * connection per peer pair, with real connection_id header semantics
  * (initiator picks recv id, send id = recv id + 1).
  *
- * BEP 29 gaps are resolved per libtorrent as documented in
- * wiki/sources/source-BEP29-utp-ledbat.md: gain 3000 B/RTT applied as
- * acked_bytes/in_flight window factor, slow start with ssthres exit on
- * delay >= target or loss, immediate ACKs (no delayed-ACK timer), loss
- * multiplier 0.5, timeout floor 500 ms / initial 1 s with doubling.
+ * BEP 29 gaps are resolved per the libtorrent reference implementation:
+ * gain 3000 B/RTT applied as acked_bytes/in_flight window factor, slow
+ * start with ssthres exit on delay >= target or loss, immediate ACKs (no
+ * delayed-ACK timer), loss multiplier 0.5, timeout floor 500 ms / initial
+ * 1 s with doubling.
  *
  * Deterministic stand-ins for spec-mandated randomness (connection ids and
  * the acceptor's initial seq_nr are random per BEP 29): a per-socket

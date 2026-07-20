@@ -3,10 +3,9 @@
  * SimTime: the TIME concept this experiment line's transport models require
  * — exactly cadmium::concepts::Time (totally ordered, regular, +/-,
  * has_infinity). Deliberately not restricted to std::floating_point: DEVS
- * causality is only exact under exact-arithmetic time types (see
- * wiki/sources/source-VDW14-devs-time-datatype.md — floating-point virtual
- * time can silently reorder simultaneous events after enough accumulated
- * rounding error, invisibly, over long runs).
+ * causality is only exact under exact-arithmetic time types — floating-point
+ * virtual time can silently reorder simultaneous events after enough
+ * accumulated rounding error, invisibly, over long runs.
  *
  * double remains the practical default. cdcommons::time::decimal<Exp,Raw>
  * (this project's own established exact-time type for real experiments —
@@ -17,8 +16,7 @@
  * chained heterogeneous-denominator operations (confirmed with UBSan on a
  * probe mirroring an RTT-EWMA-shaped update), which a real transfer's
  * update count exceeds by a wide margin. decimal's fixed scale sidesteps
- * that failure mode entirely — see memory-vault-kdag and
- * wiki/concepts/concept-time-representation-des.md.
+ * that failure mode entirely.
  *
  * decimal deliberately has no operator/ (dividing a fixed-point value
  * rarely lands on an exactly-representable result at the same scale, so

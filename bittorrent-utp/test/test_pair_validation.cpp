@@ -19,11 +19,11 @@
  * reproducible golden values, not statistical ranges.
  *
  * The scheduler's simultaneity check uses EXACT equality, not an epsilon
- * tolerance. Per wiki/sources/source-VDW14-devs-time-datatype.md,
- * epsilon-fudged simultaneity in DEVS hides float/double's accumulated
- * rounding error instead of measuring it, and can silently merge or split
- * events that exact DEVS semantics say should or shouldn't coincide — an
- * unbounded, undetected causality error, not a cosmetic flakiness issue.
+ * tolerance: epsilon-fudged simultaneity in DEVS hides float/double's
+ * accumulated rounding error instead of measuring it, and can silently
+ * merge or split events that exact DEVS semantics say should or shouldn't
+ * coincide — an unbounded, undetected causality error, not a cosmetic
+ * flakiness issue.
  *
  * The harness is templated on TIME (SimTime, sim_time.hpp) so scenario A
  * also runs under cdcommons::time::decimal<-6, int64_t> — this project's
@@ -39,8 +39,7 @@
  * confirmed with UBSan on a probe mirroring this model's own RTT EWMA
  * update — which a real transfer's RTT/RTO update count exceeds by a wide
  * margin. decimal's fixed scale (raw*10^Exp, exact integer +/-, no
- * denominator of any kind) sidesteps that failure mode entirely; see
- * memory-vault-kdag and wiki/concepts/concept-time-representation-des.md.
+ * denominator of any kind) sidesteps that failure mode entirely.
  */
 #include <cadmium/logger/cadmium_log.hpp>
 #include <cadmium/modeling/message_box.hpp>
@@ -393,11 +392,10 @@ TEST_CASE("exact-arithmetic reference: decimal<-6> agrees with double on scenari
     // is trustworthy, measure it — run the identical scenario (same
     // parameters, same topology, same code path via the TIME template
     // parameter) under an exact fixed-point time type and check it agrees
-    // with the double run's own result. See the file header and
-    // wiki/sources/source-VDW14-devs-time-datatype.md for why this is the
-    // correct way to build confidence in float/double time, instead of an
-    // epsilon-tolerant simultaneity check that would hide any divergence
-    // rather than reveal it.
+    // with the double run's own result. See the file header for why this
+    // is the correct way to build confidence in float/double time, instead
+    // of an epsilon-tolerant simultaneity check that would hide any
+    // divergence rather than reveal it.
     const double finish_double          = scenario_a_finish<double>();
     const exact_time finish_exact       = scenario_a_finish<exact_time>();
     const double finish_exact_as_double = cadmium::log::to_sim_double(finish_exact);
