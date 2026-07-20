@@ -8,7 +8,7 @@
  *
  * Usage: bt-utp-s2-sto <seed> <drop_prob>
  * Prints one line: seed=<> p=<> finish=<> delivered=<0|1> dropped_ab=<>
- * retransmits=<> throughput_bps=<>
+ * retransmits=<> throughput_Bps=<>
  *
  * Exit codes: 0 = all bytes delivered, 1 = ran but did not fully deliver,
  * 2 = bad usage/arguments (including an out-of-range drop_prob rejected by
@@ -53,11 +53,11 @@ int main(int argc, char **argv) {
         return 2;
     }
 
-    const double throughput_bps =
+    const double throughput_Bps =
         r.finish > 0.0 ? static_cast<double>(total_bytes) / r.finish : 0.0;
 
     std::cout << "seed=" << seed << " p=" << drop_prob << " finish=" << r.finish
               << " delivered=" << (r.all_delivered ? 1 : 0) << " dropped_ab=" << r.dropped_ab
-              << " retransmits=" << r.retransmits_a << " throughput_bps=" << throughput_bps << "\n";
+              << " retransmits=" << r.retransmits_a << " throughput_Bps=" << throughput_Bps << "\n";
     return r.all_delivered ? 0 : 1;
 }

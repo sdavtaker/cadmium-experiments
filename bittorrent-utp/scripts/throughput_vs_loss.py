@@ -25,12 +25,18 @@ def die(msg: str):
 
 
 def run_one(exe: str, seed: int, p: float) -> dict:
-    proc = subprocess.run([exe, str(seed), str(p)], capture_output=True, text=True, timeout=60)
+    try:
+        proc = subprocess.run([exe, str(seed), str(p)], capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        die(f"seed={seed} p={p} timed out after 60s")
     if proc.returncode not in (0, 1):
         die(f"{exe} {seed} {p} crashed: {proc.stderr.strip()}")
-    fields = dict(kv.split("=", 1) for kv in proc.stdout.split())
-    fields["delivered"] = int(fields["delivered"])
-    fields["throughput_bps"] = float(fields["throughput_bps"])
+    try:
+        fields = dict(kv.split("=", 1) for kv in proc.stdout.split())
+        fields["delivered"] = int(fields["delivered"])
+        fields["throughput_Bps"] = float(fields["throughput_Bps"])
+    except (KeyError, ValueError) as e:
+        die(f"seed={seed} p={p} produced unparseable output {proc.stdout!r}: {e}")
     if not fields["delivered"]:
         die(f"seed={seed} p={p} did not deliver all bytes — reliability invariant violated")
     return fields
@@ -42,9 +48,9 @@ def main():
     exe = sys.argv[1]
 
     means = []
-    print(f"{'p':>8}  {'mean_throughput_bps':>20}  {'seeds':>5}")
+    print(f"{'p':>8}  {'mean_throughput_Bps':>20}  {'seeds':>5}")
     for p in P_SWEEP:
-        samples = [run_one(exe, seed, p)["throughput_bps"] for seed in SEEDS]
+        samples = [run_one(exe, seed, p)["throughput_Bps"] for seed in SEEDS]
         mean = sum(samples) / len(samples)
         means.append(mean)
         print(f"{p:>8}  {mean:>20.1f}  {len(samples):>5}")

@@ -45,11 +45,24 @@ TEST_CASE("sto two-client: every byte is delivered despite loss, for every p in 
 
 TEST_CASE("sto two-client: higher loss probability visibly drives more retransmits") {
     // Not a strict per-seed monotonicity claim (that's the scripted,
-    // many-seed statistical check) — just confirms loss actually engages
-    // the repair path at all, at a fixed seed.
-    const sto_scenario_result low  = run_two_client_sto(99, 0.001);
-    const sto_scenario_result high = run_two_client_sto(99, 0.05);
-    CHECK(low.all_delivered);
-    CHECK(high.all_delivered);
-    CHECK(high.retransmits_a >= low.retransmits_a);
+    // many-seed statistical check): a single shared URNG stream drives both
+    // drop decisions and jitter, and jitter draws are skipped on dropped
+    // frames (lossy_channel::external_transition), so changing drop_prob
+    // changes RNG consumption and can shift later outcomes — retransmits
+    // aren't guaranteed monotone for one fixed seed across different p.
+    // Search a small seed range and require at least one to show higher
+    // retransmits at higher loss, exercising the repair path without
+    // assuming per-seed monotonicity (same approach as the jitter-reorder
+    // test in test_lossy_channel.cpp).
+    bool saw_more_retransmits = false;
+    for (std::uint32_t seed = 1; seed <= 20 && !saw_more_retransmits; ++seed) {
+        const sto_scenario_result low  = run_two_client_sto(seed, 0.001);
+        const sto_scenario_result high = run_two_client_sto(seed, 0.05);
+        REQUIRE(low.all_delivered);
+        REQUIRE(high.all_delivered);
+        if (high.retransmits_a > low.retransmits_a) {
+            saw_more_retransmits = true;
+        }
+    }
+    CHECK(saw_more_retransmits);
 }
