@@ -25,31 +25,36 @@
  * events that exact DEVS semantics say should or shouldn't coincide — an
  * unbounded, undetected causality error, not a cosmetic flakiness issue.
  *
- * utp_socket and bottleneck_channel are generic over TIME via the SimTime
- * concept (sim_time.hpp), not restricted to std::floating_point, precisely
- * so an exact-arithmetic TIME type can be substituted as a causality
- * reference for double (this is the correct way to build confidence in
- * float/double time: measure it against exact arithmetic, don't assume
- * it). This file does not currently exercise that with RationalTime
- * (../../rational_time.hpp): its naive long long numerator/denominator
- * overflows within ~30-40 chained heterogeneous-denominator operations
- * (confirmed with UBSan on a standalone probe mirroring utp_socket's RTT
- * EWMA — `rtt += (sample - rtt) / 8` repeated with non-power-of-10 sample
- * denominators), and a real transfer's RTT/RTO update count is far beyond
- * that. Running the full protocol stack under RationalTime needs either an
- * overflow-safe exact time type or a much narrower reference model first —
- * a separate, properly-scoped follow-up, not a caveat to paper over here.
+ * The harness is templated on TIME (SimTime, sim_time.hpp) so scenario A
+ * also runs under cdcommons::time::decimal<-6, int64_t> — this project's
+ * own established exact-arithmetic time type for real experiments — as a
+ * causality reference for double, and the two are asserted to agree. That
+ * agreement is itself the useful result: it demonstrates, rather than
+ * assumes, that double is trustworthy at this scale (VDW14's own finding
+ * is that float/double causality errors are "invisible in a short run,
+ * only reliably observed over tens of thousands of seconds," so this is a
+ * real, if narrow, check). RationalTime (../../rational_time.hpp) was
+ * tried first and rejected: its naive long long numerator/denominator
+ * overflows within ~30-40 chained heterogeneous-denominator operations —
+ * confirmed with UBSan on a probe mirroring this model's own RTT EWMA
+ * update — which a real transfer's RTT/RTO update count exceeds by a wide
+ * margin. decimal's fixed scale (raw*10^Exp, exact integer +/-, no
+ * denominator of any kind) sidesteps that failure mode entirely; see
+ * memory-vault-kdag and wiki/concepts/concept-time-representation-des.md.
  */
+#include <cadmium/logger/cadmium_log.hpp>
 #include <cadmium/modeling/message_box.hpp>
 #include <cadmium/modeling/ports.hpp>
 
 #include "../models/utp/bottleneck_channel.hpp"
+#include "../models/utp/sim_time.hpp"
 #include "../models/utp/traffic_source.hpp"
 #include "../models/utp/utp_socket.hpp"
 #include "../msg/app_chunk.hpp"
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <cdcommons/time/decimal.hpp>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -61,32 +66,45 @@ namespace {
     using bt_utp::bottleneck_channel;
     using bt_utp::bottleneck_channel_defs_t;
     using bt_utp::peer_id;
+    using bt_utp::seconds_converter;
+    using bt_utp::SimTime;
     using bt_utp::traffic_source;
     using bt_utp::utp_constants;
 
-    using sock_t    = bt_utp::utp_socket<double, app_chunk>;
+    /// Exact-arithmetic reference: microsecond resolution matches uTP's own
+    /// wire-header timestamp granularity, and int64_t gives ~292,000 years
+    /// of headroom at that resolution — no risk of magnitude overflow for
+    /// any scenario here. Unlike RationalTime, there is no denominator to
+    /// grow: every operation is a plain fixed-scale integer add/subtract.
+    using exact_time = cdcommons::time::decimal<-6, std::int64_t>;
+
     using sdefs     = bt_utp::utp_socket_defs_t<app_chunk>;
     using frame_t   = sdefs::frame_t; // utp_frame<app_chunk>, not net_frame
     using chan_defs = bottleneck_channel_defs_t<frame_t>;
-    using channel_t = bottleneck_channel<double, frame_t>;
-    using source_t  = traffic_source<double>;
 
-    using sock_in_box_t = cadmium::make_message_box<sock_t::input_ports>::type;
-    using chan_in_box_t = cadmium::make_message_box<channel_t::input_ports>::type;
+    template <SimTime TIME> using sock_t    = bt_utp::utp_socket<TIME, app_chunk>;
+    template <SimTime TIME> using channel_t = bottleneck_channel<TIME, frame_t>;
+    template <SimTime TIME> using source_t  = traffic_source<TIME>;
 
-    sock_in_box_t sock_frame_box(const frame_t &f) {
-        sock_in_box_t box;
-        cadmium::get_message<sdefs::net_in>(box).emplace(f);
+    template <SimTime TIME>
+    typename cadmium::make_message_box<typename sock_t<TIME>::input_ports>::type
+    sock_frame_box(const frame_t &f) {
+        typename cadmium::make_message_box<typename sock_t<TIME>::input_ports>::type box;
+        cadmium::get_message<typename sdefs::net_in>(box).emplace(f);
         return box;
     }
-    sock_in_box_t sock_send_box(const sdefs::send_req &req) {
-        sock_in_box_t box;
-        cadmium::get_message<sdefs::app_send>(box).emplace(req);
+    template <SimTime TIME>
+    typename cadmium::make_message_box<typename sock_t<TIME>::input_ports>::type
+    sock_send_box(const typename sdefs::send_req &req) {
+        typename cadmium::make_message_box<typename sock_t<TIME>::input_ports>::type box;
+        cadmium::get_message<typename sdefs::app_send>(box).emplace(req);
         return box;
     }
-    chan_in_box_t chan_box(const frame_t &f) {
-        chan_in_box_t box;
-        cadmium::get_message<chan_defs::in>(box).emplace(f);
+    template <SimTime TIME>
+    typename cadmium::make_message_box<typename channel_t<TIME>::input_ports>::type
+    chan_box(const frame_t &f) {
+        typename cadmium::make_message_box<typename channel_t<TIME>::input_ports>::type box;
+        cadmium::get_message<typename chan_defs::in>(box).emplace(f);
         return box;
     }
 
@@ -97,46 +115,48 @@ namespace {
     /// its own last update, so the harness tracks a shared "now" and, per
     /// step, catches every imminent atom up via internal_transition() and
     /// every receiving atom up via external_transition(elapsed, box) with
-    /// elapsed = now - <atom's last update time>.
-    struct wired_pair {
-        source_t source;
-        sock_t a, b;
-        channel_t ab, ba; // A->B (bulk data), B->A (acks)
+    /// elapsed = now - <atom's last update time>. Simultaneity is exact
+    /// equality (see file header) — TIME must therefore be exact-arithmetic
+    /// to be trustworthy, which is exactly what this harness cross-checks.
+    template <SimTime TIME> struct wired_pair {
+        source_t<TIME> source;
+        sock_t<TIME> a, b;
+        channel_t<TIME> ab, ba; // A->B (bulk data), B->A (acks)
 
-        double now         = 0.0;
-        double last_source = 0.0, last_a = 0.0, last_b = 0.0, last_ab = 0.0, last_ba = 0.0;
+        TIME now{};
+        TIME last_source{}, last_a{}, last_b{}, last_ab{}, last_ba{};
 
-        std::vector<sdefs::deliver_ind> delivered_b{};
+        std::vector<typename sdefs::deliver_ind> delivered_b{};
 
         wired_pair(peer_id self_a, utp_constants ka, peer_id self_b, utp_constants kb,
-                   app_chunk chunk, double prop_delay, double rate_ab, double rate_ba,
+                   app_chunk chunk, TIME prop_delay, double rate_ab, double rate_ba,
                    std::uint64_t queue_cap_ab = 0, std::uint64_t drop_every_nth_ab = 0)
             : source(self_b, chunk), a(self_a, ka), b(self_b, kb),
               ab(prop_delay, rate_ab, queue_cap_ab, drop_every_nth_ab), ba(prop_delay, rate_ba) {}
 
-        static double abs_next(double last, double sigma) {
-            return sigma == std::numeric_limits<double>::infinity()
-                       ? std::numeric_limits<double>::infinity()
+        static TIME abs_next(TIME last, TIME sigma) {
+            return sigma == std::numeric_limits<TIME>::infinity()
+                       ? std::numeric_limits<TIME>::infinity()
                        : last + sigma;
         }
 
         /// Runs until quiescent (all atoms passive) or t_max, whichever
         /// comes first. Returns the final simulation time reached.
-        double run(double t_max) {
+        TIME run(TIME t_max) {
             for (;;) {
-                const double an_source = abs_next(last_source, source.time_advance());
-                const double an_a      = abs_next(last_a, a.time_advance());
-                const double an_b      = abs_next(last_b, b.time_advance());
-                const double an_ab     = abs_next(last_ab, ab.time_advance());
-                const double an_ba     = abs_next(last_ba, ba.time_advance());
+                const TIME an_source = abs_next(last_source, source.time_advance());
+                const TIME an_a      = abs_next(last_a, a.time_advance());
+                const TIME an_b      = abs_next(last_b, b.time_advance());
+                const TIME an_ab     = abs_next(last_ab, ab.time_advance());
+                const TIME an_ba     = abs_next(last_ba, ba.time_advance());
 
-                double next = an_source;
-                next        = std::min(next, an_a);
-                next        = std::min(next, an_b);
-                next        = std::min(next, an_ab);
-                next        = std::min(next, an_ba);
+                TIME next = an_source;
+                next      = std::min(next, an_a);
+                next      = std::min(next, an_b);
+                next      = std::min(next, an_ab);
+                next      = std::min(next, an_ba);
 
-                if (next == std::numeric_limits<double>::infinity() || next > t_max) {
+                if (next == std::numeric_limits<TIME>::infinity() || next > t_max) {
                     return now;
                 }
                 now = next;
@@ -150,29 +170,30 @@ namespace {
                 const bool ab_up  = an_ab == now;
                 const bool ba_up  = an_ba == now;
 
-                std::optional<sdefs::send_req> src_out;
+                std::optional<typename sdefs::send_req> src_out;
                 std::optional<frame_t> a_out_net, ab_out, ba_out;
-                std::optional<sdefs::deliver_ind> a_out_deliver, b_out_deliver;
+                std::optional<typename sdefs::deliver_ind> a_out_deliver, b_out_deliver;
                 std::optional<frame_t> b_out_net;
 
                 if (src_up) {
-                    src_out = cadmium::get_message<source_t::defs::out>(source.output());
+                    src_out =
+                        cadmium::get_message<typename source_t<TIME>::defs::out>(source.output());
                 }
                 if (a_up) {
                     const auto out = a.output();
-                    a_out_net      = cadmium::get_message<sdefs::net_out>(out);
-                    a_out_deliver  = cadmium::get_message<sdefs::app_deliver>(out);
+                    a_out_net      = cadmium::get_message<typename sdefs::net_out>(out);
+                    a_out_deliver  = cadmium::get_message<typename sdefs::app_deliver>(out);
                 }
                 if (b_up) {
                     const auto out = b.output();
-                    b_out_net      = cadmium::get_message<sdefs::net_out>(out);
-                    b_out_deliver  = cadmium::get_message<sdefs::app_deliver>(out);
+                    b_out_net      = cadmium::get_message<typename sdefs::net_out>(out);
+                    b_out_deliver  = cadmium::get_message<typename sdefs::app_deliver>(out);
                 }
                 if (ab_up) {
-                    ab_out = cadmium::get_message<chan_defs::out>(ab.output());
+                    ab_out = cadmium::get_message<typename chan_defs::out>(ab.output());
                 }
                 if (ba_up) {
-                    ba_out = cadmium::get_message<chan_defs::out>(ba.output());
+                    ba_out = cadmium::get_message<typename chan_defs::out>(ba.output());
                 }
 
                 if (src_up) {
@@ -205,23 +226,23 @@ namespace {
                 // classic-DEVS external-input semantics after an internal
                 // event at the same instant.
                 if (src_out.has_value()) {
-                    a.external_transition(now - last_a, sock_send_box(*src_out));
+                    a.external_transition(now - last_a, sock_send_box<TIME>(*src_out));
                     last_a = now;
                 }
                 if (a_out_net.has_value()) {
-                    ab.external_transition(now - last_ab, chan_box(*a_out_net));
+                    ab.external_transition(now - last_ab, chan_box<TIME>(*a_out_net));
                     last_ab = now;
                 }
                 if (ab_out.has_value()) {
-                    b.external_transition(now - last_b, sock_frame_box(*ab_out));
+                    b.external_transition(now - last_b, sock_frame_box<TIME>(*ab_out));
                     last_b = now;
                 }
                 if (b_out_net.has_value()) {
-                    ba.external_transition(now - last_ba, chan_box(*b_out_net));
+                    ba.external_transition(now - last_ba, chan_box<TIME>(*b_out_net));
                     last_ba = now;
                 }
                 if (ba_out.has_value()) {
-                    a.external_transition(now - last_a, sock_frame_box(*ba_out));
+                    a.external_transition(now - last_a, sock_frame_box<TIME>(*ba_out));
                     last_a = now;
                 }
                 if (b_out_deliver.has_value()) {
@@ -232,39 +253,56 @@ namespace {
         }
     };
 
+    // Scenario A parameters, shared across TIME instantiations: rate is
+    // always double (a throughput, not a TIME quantity — see
+    // bottleneck_channel.hpp), and prop_delay/t_max are converted to TIME
+    // via seconds_converter, the same customization point utp_socket
+    // itself uses for its own config constants.
+    constexpr double rate_ab_sc = 1'000'000.0, rate_ba_sc = 100'000'000.0;
+    constexpr double prop_delay_sc           = 0.05;
+    constexpr std::uint64_t scenario_a_bytes = 2'000'000; // 2 MB
+    constexpr double t_max_sc                = 60.0;
+
+    template <SimTime TIME> TIME scenario_a_finish() {
+        utp_constants k{};
+        wired_pair<TIME> h{1,
+                           k,
+                           2,
+                           k,
+                           app_chunk{1, scenario_a_bytes},
+                           seconds_converter<TIME>::convert(prop_delay_sc),
+                           rate_ab_sc,
+                           rate_ba_sc,
+                           /*queue_cap_ab=*/0,
+                           /*drop_every_nth_ab=*/0};
+        return h.run(seconds_converter<TIME>::convert(t_max_sc));
+    }
+
 } // namespace
 
 TEST_CASE("deterministic pair: LEDBAT holds queuing delay near target under a bulk transfer") {
-    // 1 MB/s cap, 50 ms one-way propagation, ample queue (no tail-drop —
-    // isolates LEDBAT's own delay-based backoff), no loss. Ack path is
-    // effectively uncapped so the forward (data) path is the only
-    // bottleneck under test.
-    constexpr double rate_ab            = 1'000'000.0; // bytes/s
-    constexpr double rate_ba            = 100'000'000.0;
-    constexpr double prop_delay         = 0.05;      // s
-    constexpr std::uint64_t total_bytes = 2'000'000; // 2 MB
-
     utp_constants k{};
-    wired_pair h{1,
-                 k,
-                 2,
-                 k,
-                 app_chunk{1, total_bytes},
-                 prop_delay,
-                 rate_ab,
-                 rate_ba,
-                 /*queue_cap_ab=*/0,
-                 /*drop_every_nth_ab=*/0};
+    wired_pair<double> h{1,
+                         k,
+                         2,
+                         k,
+                         app_chunk{1, scenario_a_bytes},
+                         prop_delay_sc,
+                         rate_ab_sc,
+                         rate_ba_sc,
+                         /*queue_cap_ab=*/0,
+                         /*drop_every_nth_ab=*/0};
 
-    const double finish = h.run(60.0);
+    const double finish = h.run(t_max_sc);
 
     REQUIRE(h.delivered_b.size() == 1);
-    CHECK(h.delivered_b[0].payload == app_chunk{1, total_bytes});
+    CHECK(h.delivered_b[0].payload == app_chunk{1, scenario_a_bytes});
     CHECK(h.a.state.retransmits == 0); // no loss configured: nothing to repair
 
     // Analytic lower bound: serialization time at the rate cap plus one
     // round trip for the handshake, with zero queuing delay.
-    const double analytic_min = static_cast<double>(total_bytes) / rate_ab + 2 * prop_delay;
+    const double analytic_min =
+        static_cast<double>(scenario_a_bytes) / rate_ab_sc + 2 * prop_delay_sc;
     CHECK(finish > analytic_min);
 
     // Golden value: this scenario is fully deterministic (fixed channel
@@ -300,16 +338,16 @@ TEST_CASE("deterministic pair: transfer completes and is repaired under scripted
     constexpr std::uint64_t drop_every_nth = 20; // deterministic stand-in for random loss
 
     utp_constants k{};
-    wired_pair h{1,
-                 k,
-                 2,
-                 k,
-                 app_chunk{7, total_bytes},
-                 prop_delay,
-                 rate_ab,
-                 rate_ba,
-                 /*queue_cap_ab=*/0,
-                 drop_every_nth};
+    wired_pair<double> h{1,
+                         k,
+                         2,
+                         k,
+                         app_chunk{7, total_bytes},
+                         prop_delay,
+                         rate_ab,
+                         rate_ba,
+                         /*queue_cap_ab=*/0,
+                         drop_every_nth};
 
     const double finish = h.run(60.0);
 
@@ -332,4 +370,31 @@ TEST_CASE("deterministic pair: transfer completes and is repaired under scripted
     // future changes to retry timing, while still catching pathological
     // slowdowns.
     CHECK(finish < 15.0);
+}
+
+TEST_CASE("exact-arithmetic reference: decimal<-6> agrees with double on scenario A") {
+    // The point of this test: don't assume double's scheduling arithmetic
+    // is trustworthy, measure it — run the identical scenario (same
+    // parameters, same topology, same code path via the TIME template
+    // parameter) under an exact fixed-point time type and check it agrees
+    // with the double run's own result. See the file header and
+    // wiki/sources/source-VDW14-devs-time-datatype.md for why this is the
+    // correct way to build confidence in float/double time, instead of an
+    // epsilon-tolerant simultaneity check that would hide any divergence
+    // rather than reveal it.
+    const double finish_double          = scenario_a_finish<double>();
+    const exact_time finish_exact       = scenario_a_finish<exact_time>();
+    const double finish_exact_as_double = cadmium::log::to_sim_double(finish_exact);
+
+    INFO("double finish=" << finish_double << " exact finish=" << finish_exact << " ("
+                          << finish_exact_as_double << ")");
+
+    // Tight tolerance: microsecond-resolution decimal's only imprecision is
+    // bounded, single-step rounding at each byte/rate conversion and RTT
+    // EWMA divide (never compounding, unlike a growing rational
+    // denominator or float's magnitude-dependent error) — any REAL
+    // divergence (the VDW14 causality-violation phenomenon: a gained or
+    // lost retransmission or RTT somewhere in the run) would show up as a
+    // difference far larger than microsecond-scale rounding.
+    CHECK_THAT(finish_exact_as_double, Catch::Matchers::WithinAbs(finish_double, 1e-3));
 }

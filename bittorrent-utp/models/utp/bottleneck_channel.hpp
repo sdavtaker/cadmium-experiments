@@ -47,22 +47,26 @@ namespace bt_utp {
 
     // SimTime (sim_time.hpp): double by default, but not restricted to
     // std::floating_point — an exact-arithmetic TIME type (e.g.
-    // RationalTime) must be usable too, since DEVS causality is only exact
-    // under exact arithmetic (source-VDW14-devs-time-datatype.md).
+    // cdcommons::time::decimal) must be usable too, since DEVS causality is
+    // only exact under exact arithmetic (source-VDW14-devs-time-datatype.md).
     template <SimTime TIME, typename FRAME = net_frame> class bottleneck_channel {
         using defs = bottleneck_channel_defs_t<FRAME>;
 
       public:
         /// prop_delay: one-way propagation delay added after service.
-        /// rate: service rate in bytes per unit of TIME.
+        /// rate: service rate in bytes/second — a throughput, not a TIME
+        /// duration, so it stays double regardless of TIME (matching
+        /// utp_constants' own config values); the byte/rate division is
+        /// computed in double and converted once via seconds_converter, so
+        /// TIME types without operator/ (e.g. cdcommons decimal) work too.
         /// queue_capacity_bytes: tail-drop threshold; 0 = unbounded.
         /// drop_every_nth: deterministically drop every Nth arriving frame
         /// (the Nth, 2Nth, ...); 0 = disabled.
-        bottleneck_channel(TIME prop_delay, TIME rate, std::uint64_t queue_capacity_bytes = 0,
+        bottleneck_channel(TIME prop_delay, double rate, std::uint64_t queue_capacity_bytes = 0,
                            std::uint64_t drop_every_nth = 0)
             : prop_delay_(prop_delay), rate_(rate), queue_capacity_bytes_(queue_capacity_bytes),
               drop_every_nth_(drop_every_nth) {
-            if (!(rate_ > TIME{})) {
+            if (!(rate_ > 0.0)) {
                 throw std::invalid_argument("bottleneck_channel: rate must be > 0");
             }
             if (prop_delay_ < TIME{}) {
@@ -134,8 +138,10 @@ namespace bt_utp {
                 ++state.dropped_overflow;
                 return;
             }
-            const TIME service_rem = state.server_free_rem + static_cast<TIME>(size) / rate_;
-            state.server_free_rem  = service_rem;
+            const double service_seconds = static_cast<double>(size) / rate_;
+            const TIME service_rem =
+                state.server_free_rem + seconds_converter<TIME>::convert(service_seconds);
+            state.server_free_rem = service_rem;
             state.pending.push_back({service_rem + prop_delay_, service_rem, frame});
         }
 
@@ -168,7 +174,7 @@ namespace bt_utp {
         }
 
         TIME prop_delay_;
-        TIME rate_;
+        double rate_;
         std::uint64_t queue_capacity_bytes_;
         std::uint64_t drop_every_nth_;
     };

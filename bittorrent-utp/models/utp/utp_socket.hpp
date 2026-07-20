@@ -85,9 +85,10 @@ namespace bt_utp {
     };
 
     // SimTime (sim_time.hpp): double by default, but not restricted to
-    // std::floating_point — exact-arithmetic TIME types (e.g. RationalTime)
-    // must be usable too, since DEVS causality is only exact under exact
-    // arithmetic (source-VDW14-devs-time-datatype.md). utp_constants'
+    // std::floating_point — exact-arithmetic TIME types (e.g.
+    // cdcommons::time::decimal) must be usable too, since DEVS causality is
+    // only exact under exact arithmetic (source-VDW14-devs-time-datatype.md).
+    // utp_constants'
     // min_timeout/initial_timeout are plain seconds-as-double config values
     // regardless of TIME; seconds_converter<TIME> turns them into the
     // scheduling clock's own TIME type at construction (see min_timeout_/
@@ -634,7 +635,7 @@ namespace bt_utp {
                 c.dup_acks             = 0;
                 c.consecutive_timeouts = 0;
                 // RTO = max(floor, rtt + 4*rtt_var); repeated addition
-                // instead of a 4x scalar multiply — TIME (e.g. RationalTime)
+                // instead of a 4x scalar multiply — TIME (e.g. decimal)
                 // isn't required to support multiplication, only +/-/.
                 const TIME four_rtt_var = c.rtt_var + c.rtt_var + c.rtt_var + c.rtt_var;
                 c.timeout               = std::max(min_timeout_, c.rtt + four_rtt_var);
@@ -720,8 +721,10 @@ namespace bt_utp {
 
         void update_rtt(conn &c, TIME packet_rtt) {
             const TIME delta = c.rtt - packet_rtt;
-            c.rtt_var        = c.rtt_var + (time_abs(delta) - c.rtt_var) / static_cast<TIME>(4);
-            c.rtt            = c.rtt + (packet_rtt - c.rtt) / static_cast<TIME>(8);
+            // divide_by (sim_time.hpp), not operator/: decimal has no
+            // operator/ at all, only a raw-integer divide-by-constant.
+            c.rtt_var = c.rtt_var + divide_by(time_abs(delta) - c.rtt_var, 4);
+            c.rtt     = c.rtt + divide_by(packet_rtt - c.rtt, 8);
         }
 
         void ledbat_update(conn &c, double acked_bytes, double in_flight, double delay_sample) {
