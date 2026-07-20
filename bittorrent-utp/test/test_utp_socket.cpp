@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <limits>
 #include <sstream>
+#include <string>
 #include <vector>
 
 namespace {
@@ -394,6 +395,67 @@ TEST_CASE("utp_socket: app_send reopens a fresh connection instead of dropping i
     CHECK(fresh->conn_id_recv != old_conn_id);
     CHECK(fresh->pending.size() == 1);
     CHECK(fresh->pending.front().payload == app_chunk{9, 500});
+}
+
+TEST_CASE("utp_socket: reply_micro updates from ST_STATE packets, not just data") {
+    pair_harness h{utp_constants{}, utp_constants{}};
+    h.connect();
+
+    frame_t ack{};
+    ack.src                        = 2;
+    ack.dst                        = 1;
+    ack.pkt.type                   = packet_type::st_state;
+    ack.pkt.connection_id          = h.a.connection(2)->conn_id_recv;
+    ack.pkt.seq_nr                 = h.b.connection(1)->seq_nr;
+    ack.pkt.ack_nr                 = h.a.connection(2)->seq_nr;
+    ack.pkt.wnd_size               = 1 << 20;
+    ack.pkt.timestamp_microseconds = 500;
+    h.a.external_transition(1.0, frame_box(ack)); // advance a's clock to 1s
+    CHECK(h.a.connection(2)->reply_micro == 1'000'000u - 500u);
+}
+
+TEST_CASE("utp_socket: a RESET echoing our conn_id_send (a peer's reject-style reset) closes "
+          "the connection") {
+    pair_harness h{utp_constants{}, utp_constants{}};
+    h.connect();
+
+    // Mirrors how this socket itself builds a reject reset for foreign
+    // traffic: connection_id = the value seen on the packet that confused
+    // the sender, i.e. OUR conn_id_send (not our conn_id_recv).
+    frame_t reset{};
+    reset.src               = 2;
+    reset.dst               = 1;
+    reset.pkt.type          = packet_type::st_reset;
+    reset.pkt.connection_id = h.a.connection(2)->conn_id_send;
+    h.a.external_transition(0.0, frame_box(reset));
+
+    CHECK(h.a.connection(2)->state == sock_t::conn_state::closed);
+}
+
+TEST_CASE("utp_socket: acceptor treats a SYN with a changed connection_id as a fresh stream") {
+    pair_harness h{utp_constants{}, utp_constants{}};
+
+    frame_t syn1{};
+    syn1.src               = 1;
+    syn1.dst               = 2;
+    syn1.pkt.type          = packet_type::st_syn;
+    syn1.pkt.connection_id = 100;
+    syn1.pkt.seq_nr        = 1;
+    syn1.pkt.wnd_size      = 1 << 20;
+    h.b.external_transition(0.0, frame_box(syn1));
+    REQUIRE(h.b.connection(1) != nullptr);
+    CHECK(h.b.connection(1)->conn_id_send == 100);
+    CHECK(h.b.connection(1)->conn_id_recv == 101);
+
+    // Same peer restarts the stream with a different connection_id before
+    // the old entry closed: must not keep the stale ids.
+    frame_t syn2           = syn1;
+    syn2.pkt.connection_id = 200;
+    h.b.external_transition(0.0, frame_box(syn2));
+    REQUIRE(h.b.connection(1) != nullptr);
+    CHECK(h.b.connection(1)->state == sock_t::conn_state::syn_recv);
+    CHECK(h.b.connection(1)->conn_id_send == 200);
+    CHECK(h.b.connection(1)->conn_id_recv == 201);
 }
 
 TEST_CASE("utp_socket: state streams to log-friendly text") {

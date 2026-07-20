@@ -411,8 +411,16 @@ namespace bt_utp {
             // in open_initiator/accept_syn) is stale or mis-tagged — treat
             // it exactly like an unknown connection rather than accepting it
             // into a live one (BEP 29: connection_id disambiguates streams).
+            // ST_RESET is an exception: a peer rejecting a packet it doesn't
+            // recognize constructs its reset by echoing back the
+            // connection_id it saw on *our* packet (see the reject branch
+            // below, which does exactly that) — that echoed value is our
+            // conn_id_send, not our conn_id_recv, so a reset matching either
+            // of our ids must be accepted or teardown can never propagate.
             const bool known_and_matching =
-                it != state.conns.end() && pkt.connection_id == it->second.conn_id_recv;
+                it != state.conns.end() && (pkt.connection_id == it->second.conn_id_recv ||
+                                            (pkt.type == packet_type::st_reset &&
+                                             pkt.connection_id == it->second.conn_id_send));
             if (!known_and_matching) {
                 // Stale/foreign packet: reset per BEP 29.
                 if (pkt.type != packet_type::st_reset) {
@@ -428,10 +436,11 @@ namespace bt_utp {
             c.adv_wnd       = pkt.wnd_size;
             c.last_activity = state.now;
             // One-way delay measurement of the peer->self direction, echoed
-            // back on our next packet (BEP 29 reply_micro).
-            if (pkt.type != packet_type::st_state) {
-                c.reply_micro = now_micros() - pkt.timestamp_microseconds;
-            }
+            // back on our next packet (BEP 29 reply_micro). Every packet we
+            // send carries a timestamp (header_for sets it unconditionally),
+            // including ST_STATE, so the sample must be taken from every
+            // received type, not just data-bearing ones.
+            c.reply_micro = now_micros() - pkt.timestamp_microseconds;
 
             switch (pkt.type) {
             case packet_type::st_state:
@@ -473,7 +482,19 @@ namespace bt_utp {
 
         void accept_syn(const frame_t &f) {
             auto it = state.conns.find(f.src);
-            if (it == state.conns.end()) {
+            // A SYN is only a retransmit of the CURRENT attempt if we have a
+            // live (non-closed) entry using the same connection_id. A closed
+            // entry, or a SYN carrying a different connection_id (the peer
+            // starting a fresh stream — e.g. after it restarted or reset),
+            // must not reuse the stale ids: doing so would ACK the new
+            // stream with the old identity and break the handshake.
+            const bool is_retransmit_of_current = it != state.conns.end() &&
+                                                  it->second.state != conn_state::closed &&
+                                                  it->second.conn_id_send == f.pkt.connection_id;
+            if (!is_retransmit_of_current) {
+                if (it != state.conns.end()) {
+                    state.conns.erase(it);
+                }
                 conn c{};
                 c.state         = conn_state::syn_recv;
                 c.initiator     = false;
