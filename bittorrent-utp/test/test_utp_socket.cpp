@@ -458,6 +458,46 @@ TEST_CASE("utp_socket: acceptor treats a SYN with a changed connection_id as a f
     CHECK(h.b.connection(1)->conn_id_recv == 201);
 }
 
+TEST_CASE("utp_socket: acceptor flushes payload queued during SYN_RECV once connected") {
+    pair_harness h{utp_constants{}, utp_constants{}};
+
+    frame_t syn{};
+    syn.src               = 1;
+    syn.dst               = 2;
+    syn.pkt.type          = packet_type::st_syn;
+    syn.pkt.connection_id = 42;
+    syn.pkt.seq_nr        = 1;
+    syn.pkt.wnd_size      = 1 << 20;
+    h.b.external_transition(0.0, frame_box(syn));
+    REQUIRE(h.b.connection(1) != nullptr);
+    REQUIRE(h.b.connection(1)->state == sock_t::conn_state::syn_recv);
+
+    // The acceptor's app layer queues a send before the initiator's first
+    // ST_DATA has arrived — handle_app_send defers it since the connection
+    // isn't CONNECTED yet.
+    h.b.external_transition(0.0, send_box(1, app_chunk{5, 400}));
+    REQUIRE(h.b.connection(1)->pending.size() == 1);
+    CHECK(h.b.connection(1)->inflight.empty());
+
+    // Initiator's first ST_DATA arrives, completing the handshake: the
+    // deferred payload must be flushed now, not stuck forever.
+    frame_t data{};
+    data.src               = 1;
+    data.dst               = 2;
+    data.pkt.type          = packet_type::st_data;
+    data.pkt.connection_id = h.b.connection(1)->conn_id_recv;
+    data.pkt.seq_nr        = static_cast<std::uint16_t>(h.b.connection(1)->ack_nr + 1);
+    data.pkt.ack_nr        = h.b.connection(1)->seq_nr;
+    data.pkt.wnd_size      = 1 << 20;
+    data.pkt.payload_size  = 10;
+    h.b.external_transition(0.0, frame_box(data));
+
+    CHECK(h.b.connection(1)->state == sock_t::conn_state::connected);
+    CHECK(h.b.connection(1)->pending.empty());
+    REQUIRE(h.b.connection(1)->inflight.size() == 1);
+    CHECK(h.b.connection(1)->inflight.front().completing == std::vector<app_chunk>{{5, 400}});
+}
+
 TEST_CASE("utp_socket: state streams to log-friendly text") {
     pair_harness h{utp_constants{}, utp_constants{}};
     h.connect();

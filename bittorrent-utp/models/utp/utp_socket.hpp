@@ -26,6 +26,7 @@
 #include <cadmium/modeling/ports.hpp>
 
 #include "../../msg/utp_frame.hpp"
+#include <algorithm>
 #include <cmath>
 #include <concepts>
 #include <cstdint>
@@ -460,6 +461,13 @@ namespace bt_utp {
             case packet_type::st_data:
                 if (c.state == conn_state::syn_recv) {
                     c.state = conn_state::connected;
+                    // Flush any payload the app queued via app_send() while
+                    // still SYN_RECV: handle_app_send only packetizes when
+                    // already CONNECTED, and process_acks below won't reach
+                    // its own packetize() call either (nothing is inflight
+                    // yet to be acked), so without this the pending queue
+                    // would sit stuck indefinitely.
+                    packetize(f.src, c);
                 }
                 process_acks(f.src, c, pkt);
                 receive_data(f.src, c, f);
