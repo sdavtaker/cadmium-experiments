@@ -273,7 +273,7 @@ namespace {
                            seconds_converter<TIME>::convert(prop_delay_sc),
                            rate_ab_sc,
                            rate_ba_sc,
-                           /*queue_cap_ab=*/0,
+                           /*queue_cap_ab=*/500'000, // finite: see dropped_overflow check below
                            /*drop_every_nth_ab=*/0};
         return h.run(seconds_converter<TIME>::convert(t_max_sc));
     }
@@ -290,7 +290,7 @@ TEST_CASE("deterministic pair: LEDBAT holds queuing delay near target under a bu
                          prop_delay_sc,
                          rate_ab_sc,
                          rate_ba_sc,
-                         /*queue_cap_ab=*/0,
+                         /*queue_cap_ab=*/500'000, // finite: see dropped_overflow check below
                          /*drop_every_nth_ab=*/0};
 
     const double finish = h.run(t_max_sc);
@@ -326,7 +326,10 @@ TEST_CASE("deterministic pair: LEDBAT holds queuing delay near target under a bu
     CHECK(h.a.connection(2)->cwnd > 50'000.0);
 
     // Channel queue never grew large: at 1 MB/s a 100ms-target standing
-    // queue is ~100 KB: comfortably bounded relative to the 2 MB transfer.
+    // queue is ~100 KB, so a 500 KB cap is comfortable headroom for LEDBAT's
+    // normal operation but still finite — a regression that let the queue
+    // run away toward the full 2 MB transfer would trip this, unlike an
+    // unbounded (0) cap where the check could never fail.
     CHECK(h.ab.state.dropped_overflow == 0);
 }
 

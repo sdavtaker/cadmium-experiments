@@ -12,13 +12,14 @@
 
 #include "../../msg/app_chunk.hpp"
 #include "../../msg/peer_id.hpp"
+#include "sim_time.hpp"
 #include "utp_socket.hpp"
 #include <limits>
 #include <tuple>
 
 namespace bt_utp {
 
-    template <typename TIME> class traffic_source {
+    template <SimTime TIME> class traffic_source {
       public:
         using send_req = typename utp_socket_defs_t<app_chunk>::send_req;
 
