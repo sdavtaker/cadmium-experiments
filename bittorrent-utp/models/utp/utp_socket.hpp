@@ -252,13 +252,20 @@ namespace bt_utp {
         void external_transition(TIME elapsed,
                                  typename cadmium::make_message_box<input_ports>::type box) {
             state.now = state.now + elapsed;
-            if (const auto &req = cadmium::get_message<typename defs::app_send>(box);
-                req.has_value()) {
-                handle_app_send(*req);
-            }
+            // net_in before app_send: if a peer's SYN arrives in the same
+            // instant as an app_send targeting that same peer (simultaneous
+            // open), accept_syn() must establish the acceptor-role
+            // connection first so app_send finds and queues into it,
+            // instead of app_send opening its own initiator connection
+            // (queuing an outgoing SYN) that accept_syn then immediately
+            // erases/replaces, orphaning that queued SYN.
             if (const auto &frm = cadmium::get_message<typename defs::net_in>(box);
                 frm.has_value()) {
                 handle_frame(*frm);
+            }
+            if (const auto &req = cadmium::get_message<typename defs::app_send>(box);
+                req.has_value()) {
+                handle_app_send(*req);
             }
         }
 

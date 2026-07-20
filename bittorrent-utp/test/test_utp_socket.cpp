@@ -44,6 +44,13 @@ namespace {
         return box;
     }
 
+    in_box_t frame_and_send_box(const frame_t &f, peer_id dst, app_chunk chunk) {
+        in_box_t box;
+        cadmium::get_message<sdefs::net_in>(box).emplace(f);
+        cadmium::get_message<sdefs::app_send>(box).emplace(sdefs::send_req{dst, chunk});
+        return box;
+    }
+
     /// Two directly-wired sockets stepped until quiescent (zero latency).
     struct pair_harness {
         sock_t a;
@@ -496,6 +503,44 @@ TEST_CASE("utp_socket: acceptor flushes payload queued during SYN_RECV once conn
     CHECK(h.b.connection(1)->pending.empty());
     REQUIRE(h.b.connection(1)->inflight.size() == 1);
     CHECK(h.b.connection(1)->inflight.front().completing == std::vector<app_chunk>{{5, 400}});
+}
+
+TEST_CASE("utp_socket: simultaneous open — inbound SYN and app_send to the same peer in one "
+          "instant") {
+    // Both ports carry a message for the SAME peer in a single
+    // external_transition (simultaneous open): a real inbound SYN from
+    // peer 2, and an app_send targeting peer 2. net_in must be processed
+    // first so app_send finds and queues into the acceptor connection
+    // accept_syn() just created, instead of first opening its own
+    // initiator connection (queuing an outgoing SYN) that accept_syn then
+    // erases/replaces, orphaning that queued SYN.
+    pair_harness h{utp_constants{}, utp_constants{}};
+
+    frame_t syn{};
+    syn.src               = 2;
+    syn.dst               = 1;
+    syn.pkt.type          = packet_type::st_syn;
+    syn.pkt.connection_id = 77;
+    syn.pkt.seq_nr        = 1;
+    syn.pkt.wnd_size      = 1 << 20;
+
+    h.a.external_transition(0.0, frame_and_send_box(syn, 2, app_chunk{3, 200}));
+
+    REQUIRE(h.a.connection(2) != nullptr);
+    const auto *c = h.a.connection(2);
+    CHECK(c->state == sock_t::conn_state::syn_recv); // acceptor role, not initiator
+    CHECK(c->conn_id_send == 77);                    // ids derived from the real inbound SYN
+    CHECK(c->conn_id_recv == 78);
+    CHECK(c->pending.size() == 1); // the app_send was queued into this connection
+
+    // Only the SYN's ST_STATE ack is pending output — no orphaned outgoing
+    // SYN from a since-erased initiator attempt.
+    auto out = h.a.output();
+    h.a.internal_transition();
+    const auto &sent = cadmium::get_message<sdefs::net_out>(out);
+    REQUIRE(sent.has_value());
+    CHECK(sent->pkt.type == packet_type::st_state);
+    CHECK(h.a.time_advance() == std::numeric_limits<double>::infinity());
 }
 
 TEST_CASE("utp_socket: state streams to log-friendly text") {
