@@ -111,10 +111,19 @@ namespace bt_utp {
             ++state.received;
             ++state.arrivals;
 
-            std::bernoulli_distribution drop(drop_prob_);
-            if (drop(rng)) {
-                ++state.dropped_loss;
-                return;
+            // Only touch the shared URNG when the outcome is actually
+            // random: a channel configured with drop_prob=0 and/or a
+            // point-interval jitter window (min==max) is deterministic in
+            // effect, and must not perturb the RNG stream any co-scheduled
+            // stochastic channel relies on for reproducibility (e.g. the
+            // ba leg in wired_pair_sto, configured this way specifically
+            // to be deterministic).
+            if (drop_prob_ > 0.0) {
+                std::bernoulli_distribution drop(drop_prob_);
+                if (drop(rng)) {
+                    ++state.dropped_loss;
+                    return;
+                }
             }
 
             const std::uint64_t size     = frame.wire_size();
@@ -123,7 +132,8 @@ namespace bt_utp {
                 state.server_free_rem + seconds_converter<TIME>::convert(service_seconds);
             state.server_free_rem = service_rem;
 
-            const double jitter_seconds = jitter_dist_(rng);
+            const double jitter_seconds =
+                jitter_dist_.a() < jitter_dist_.b() ? jitter_dist_(rng) : jitter_dist_.a();
             const TIME delivery_rem =
                 service_rem + prop_delay_ + seconds_converter<TIME>::convert(jitter_seconds);
             state.pending.push_back({delivery_rem, frame});
