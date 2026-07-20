@@ -14,7 +14,6 @@
 #include "../../msg/peer_id.hpp"
 #include "utp_socket.hpp"
 #include <limits>
-#include <stdexcept>
 #include <tuple>
 
 namespace bt_utp {
@@ -27,11 +26,14 @@ namespace bt_utp {
             struct out : public cadmium::out_port<send_req> {};
         };
 
+        // Default-constructed is passive (state=false): only the
+        // dst+chunk constructor arms the source, so a bare
+        // default-constructed instance never emits spurious traffic.
         traffic_source() = default;
-        traffic_source(peer_id dst, app_chunk chunk) : dst_(dst), chunk_(chunk) {}
+        traffic_source(peer_id dst, app_chunk chunk) : state(true), dst_(dst), chunk_(chunk) {}
 
         using state_type = bool; // true while the chunk is still pending
-        state_type state = true;
+        state_type state = false;
 
         using input_ports  = std::tuple<>;
         using output_ports = std::tuple<typename defs::out>;
@@ -40,11 +42,14 @@ namespace bt_utp {
             state = false;
         }
         void external_transition(TIME, typename cadmium::make_message_box<input_ports>::type) {
-            throw std::logic_error("traffic_source has no inputs");
+            // No input ports: nothing to do even if a scheduler calls this
+            // defensively with an empty box.
         }
         typename cadmium::make_message_box<output_ports>::type output() const {
             typename cadmium::make_message_box<output_ports>::type box;
-            cadmium::get_message<typename defs::out>(box).emplace(send_req{dst_, chunk_});
+            if (state) {
+                cadmium::get_message<typename defs::out>(box).emplace(send_req{dst_, chunk_});
+            }
             return box;
         }
         TIME time_advance() const {

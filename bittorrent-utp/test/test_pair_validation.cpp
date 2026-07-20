@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -98,6 +99,20 @@ namespace {
                        : last + sigma;
         }
 
+        /// Simultaneity tolerance for "is this atom imminent at `now`":
+        /// absolute event times reach `now` via different chains of
+        /// floating-point additions per atom, so exact `==` can split
+        /// events that should fire together into separate micro-steps on
+        /// ULP-level rounding differences. 1e-9 s is many orders of
+        /// magnitude below any real time granularity these scenarios use
+        /// (microsecond-scale timestamps at the finest) and comfortably
+        /// above double's relative epsilon at these magnitudes.
+        static constexpr double simultaneity_eps = 1e-9;
+
+        static bool imminent_at(double an_x, double now) {
+            return std::abs(an_x - now) <= simultaneity_eps;
+        }
+
         /// Runs until quiescent (all atoms passive) or t_max, whichever
         /// comes first. Returns the final simulation time reached.
         double run(double t_max) {
@@ -121,11 +136,11 @@ namespace {
 
                 // Capture outputs of every imminent atom before mutating
                 // any state, then apply internal transitions, then route.
-                const bool src_up = an_source == now;
-                const bool a_up   = an_a == now;
-                const bool b_up   = an_b == now;
-                const bool ab_up  = an_ab == now;
-                const bool ba_up  = an_ba == now;
+                const bool src_up = imminent_at(an_source, now);
+                const bool a_up   = imminent_at(an_a, now);
+                const bool b_up   = imminent_at(an_b, now);
+                const bool ab_up  = imminent_at(an_ab, now);
+                const bool ba_up  = imminent_at(an_ba, now);
 
                 std::optional<sdefs::send_req> src_out;
                 std::optional<frame_t> a_out_net, ab_out, ba_out;
@@ -261,6 +276,7 @@ TEST_CASE("deterministic pair: LEDBAT holds queuing delay near target under a bu
     // Congestion window ramped up substantially from the 150-byte floor
     // (measured final cwnd ~347 KB) — successful slow-start growth, not a
     // window stuck near its minimum.
+    REQUIRE(h.a.connection(2) != nullptr);
     CHECK(h.a.connection(2)->cwnd > 50'000.0);
 
     // Channel queue never grew large: at 1 MB/s a 100ms-target standing
