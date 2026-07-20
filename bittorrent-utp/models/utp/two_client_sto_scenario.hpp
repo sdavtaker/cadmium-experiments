@@ -32,6 +32,7 @@
 #include "sim_time.hpp"
 #include "traffic_source.hpp"
 #include "utp_socket.hpp"
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -203,10 +204,13 @@ namespace bt_utp {
     };
 
     /// Runs one instance of the stochastic two-client scenario (same
-    /// topology/rate/prop_delay as the deterministic scenario A, with
-    /// lossy_channel replacing bottleneck_channel on the A->B direction):
-    /// a bulk transfer of total_bytes over a rate-capped, lossy+jittery
-    /// link, seeded for reproducibility.
+    /// topology/rate/prop_delay as the deterministic scenario A): a bulk
+    /// transfer of total_bytes over a rate-capped, lossy+jittery A->B link,
+    /// seeded for reproducibility. Both directions are lossy_channel (per
+    /// wired_pair_sto), but the B->A (ACK) direction is configured with
+    /// drop_prob=0 and a degenerate jitter window — deterministic in
+    /// effect, matching the deterministic pass's ba, which only ever needed
+    /// loss/jitter modeled on the data direction.
     template <typename URNG = std::mt19937>
     sto_scenario_result
     run_two_client_sto(std::uint32_t seed, double drop_prob, std::uint64_t total_bytes = 2'000'000,

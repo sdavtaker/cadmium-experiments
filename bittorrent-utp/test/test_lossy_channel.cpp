@@ -17,6 +17,8 @@
 #include <limits>
 #include <random>
 #include <stdexcept>
+#include <tuple>
+#include <vector>
 
 namespace {
 
