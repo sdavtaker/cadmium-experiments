@@ -22,13 +22,14 @@
  */
 #pragma once
 
+#include <cadmium/logger/cadmium_log.hpp>
 #include <cadmium/modeling/message_box.hpp>
 #include <cadmium/modeling/ports.hpp>
 
 #include "../../msg/utp_frame.hpp"
+#include "sim_time.hpp"
 #include <algorithm>
 #include <cmath>
-#include <concepts>
 #include <cstdint>
 #include <deque>
 #include <limits>
@@ -83,7 +84,15 @@ namespace bt_utp {
         int dup_ack_threshold       = 3;
     };
 
-    template <std::floating_point TIME, typename PAYLOAD> class utp_socket {
+    // SimTime (sim_time.hpp): double by default, but not restricted to
+    // std::floating_point — exact-arithmetic TIME types (e.g. RationalTime)
+    // must be usable too, since DEVS causality is only exact under exact
+    // arithmetic (source-VDW14-devs-time-datatype.md). utp_constants'
+    // min_timeout/initial_timeout are plain seconds-as-double config values
+    // regardless of TIME; seconds_converter<TIME> turns them into the
+    // scheduling clock's own TIME type at construction (see min_timeout_/
+    // initial_timeout_ below) rather than mixing the two at use sites.
+    template <SimTime TIME, typename PAYLOAD> class utp_socket {
       public:
         using defs        = utp_socket_defs_t<PAYLOAD>;
         using frame_t     = typename defs::frame_t;
@@ -91,7 +100,9 @@ namespace bt_utp {
         using deliver_ind = typename defs::deliver_ind;
 
         utp_socket() = default;
-        utp_socket(peer_id self, utp_constants k) : self_(self), k_(k) {}
+        utp_socket(peer_id self, utp_constants k)
+            : self_(self), k_(k), min_timeout_(seconds_converter<TIME>::convert(k.min_timeout)),
+              initial_timeout_(seconds_converter<TIME>::convert(k.initial_timeout)) {}
 
         enum class conn_state : std::uint8_t {
             syn_sent,
@@ -153,12 +164,12 @@ namespace bt_utp {
             bool has_eof = false;
             std::uint16_t eof_pkt{};
 
-            double cwnd              = 0.0; // bytes
-            bool slow_start          = true;
-            double ssthres           = 0.0;
-            double rtt               = 0.0;
-            double rtt_var           = 0.0;
-            double timeout           = 0.0;
+            double cwnd     = 0.0; // bytes
+            bool slow_start = true;
+            double ssthres  = 0.0;
+            TIME rtt{};     // RTO scheduling inputs: exact TIME, not double —
+            TIME rtt_var{}; // an RTO deadline is a genuine scheduled event
+            TIME timeout{}; // time, causality-relevant under DEVS semantics.
             int consecutive_timeouts = 0;
             TIME last_activity{};
             std::uint16_t last_ack_seen{};
@@ -207,7 +218,7 @@ namespace bt_utp {
             TIME best = std::numeric_limits<TIME>::infinity();
             for (const auto &[peer, c] : state.conns) {
                 if (timer_armed(c)) {
-                    const TIME deadline = c.last_activity + static_cast<TIME>(c.timeout);
+                    const TIME deadline = c.last_activity + c.timeout;
                     const TIME rem      = deadline > state.now ? deadline - state.now : TIME{};
                     best                = rem < best ? rem : best;
                 }
@@ -242,8 +253,7 @@ namespace bt_utp {
             }
             // Timer expiry: retransmit on the (a) due connection(s).
             for (auto &[peer, c] : state.conns) {
-                if (timer_armed(c) &&
-                    !(c.last_activity + static_cast<TIME>(c.timeout) > state.now)) {
+                if (timer_armed(c) && !(c.last_activity + c.timeout > state.now)) {
                     on_timeout(peer, c);
                 }
             }
@@ -291,8 +301,8 @@ namespace bt_utp {
         }
 
         std::uint32_t now_micros() const {
-            return static_cast<std::uint32_t>(
-                static_cast<std::uint64_t>(std::llround(static_cast<double>(state.now) * 1e6)));
+            return static_cast<std::uint32_t>(static_cast<std::uint64_t>(
+                std::llround(cadmium::log::to_sim_double(state.now) * 1e6)));
         }
 
         utp_packet header_for(const conn &c, packet_type t) const {
@@ -345,7 +355,7 @@ namespace bt_utp {
             c.conn_id_send  = static_cast<std::uint16_t>(c.conn_id_recv + 1);
             c.seq_nr        = 1;
             c.cwnd          = static_cast<double>(k_.initial_cwnd);
-            c.timeout       = k_.initial_timeout;
+            c.timeout       = initial_timeout_;
             c.last_activity = state.now;
 
             utp_packet syn{};
@@ -463,7 +473,7 @@ namespace bt_utp {
                     // (libtorrent semantics — ST_STATE consumes no seq).
                     c.ack_nr               = static_cast<std::uint16_t>(pkt.seq_nr - 1);
                     c.consecutive_timeouts = 0;
-                    c.timeout              = k_.initial_timeout;
+                    c.timeout              = initial_timeout_;
                     packetize(f.src, c);
                     return;
                 }
@@ -523,7 +533,7 @@ namespace bt_utp {
                 c.ack_nr        = f.pkt.seq_nr;
                 c.adv_wnd       = f.pkt.wnd_size;
                 c.cwnd          = static_cast<double>(k_.initial_cwnd);
-                c.timeout       = k_.initial_timeout;
+                c.timeout       = initial_timeout_;
                 c.last_activity = state.now;
                 c.reply_micro   = now_micros() - f.pkt.timestamp_microseconds;
                 it              = state.conns.emplace(f.src, std::move(c)).first;
@@ -609,7 +619,7 @@ namespace bt_utp {
                 const inflight_pkt &p = c.inflight.front();
                 acked_bytes += p.wire_bytes;
                 if (p.transmissions == 1) {
-                    update_rtt(c, static_cast<double>(state.now - p.sent_at));
+                    update_rtt(c, state.now - p.sent_at);
                 }
                 acked_new = true;
                 c.inflight.pop_front();
@@ -623,7 +633,11 @@ namespace bt_utp {
             if (acked_new) {
                 c.dup_acks             = 0;
                 c.consecutive_timeouts = 0;
-                c.timeout              = std::max(k_.min_timeout, c.rtt + 4.0 * c.rtt_var);
+                // RTO = max(floor, rtt + 4*rtt_var); repeated addition
+                // instead of a 4x scalar multiply — TIME (e.g. RationalTime)
+                // isn't required to support multiplication, only +/-/.
+                const TIME four_rtt_var = c.rtt_var + c.rtt_var + c.rtt_var + c.rtt_var;
+                c.timeout               = std::max(min_timeout_, c.rtt + four_rtt_var);
                 if (acked_bytes > 0 && inflight_before > 0) {
                     const double delay_sample =
                         static_cast<double>(pkt.timestamp_difference_microseconds) * 1e-6;
@@ -665,7 +679,7 @@ namespace bt_utp {
                 if (sacked) {
                     acked_bytes += it->wire_bytes;
                     if (it->transmissions == 1) {
-                        update_rtt(c, static_cast<double>(state.now - it->sent_at));
+                        update_rtt(c, state.now - it->sent_at);
                     }
                     to_erase.push_back(it->seq);
                     acked_new = true;
@@ -700,10 +714,14 @@ namespace bt_utp {
             }
         }
 
-        void update_rtt(conn &c, double packet_rtt) {
-            const double delta = c.rtt - packet_rtt;
-            c.rtt_var += (std::abs(delta) - c.rtt_var) / 4.0;
-            c.rtt += (packet_rtt - c.rtt) / 8.0;
+        static TIME time_abs(TIME x) {
+            return x < TIME{} ? TIME{} - x : x;
+        }
+
+        void update_rtt(conn &c, TIME packet_rtt) {
+            const TIME delta = c.rtt - packet_rtt;
+            c.rtt_var        = c.rtt_var + (time_abs(delta) - c.rtt_var) / static_cast<TIME>(4);
+            c.rtt            = c.rtt + (packet_rtt - c.rtt) / static_cast<TIME>(8);
         }
 
         void ledbat_update(conn &c, double acked_bytes, double in_flight, double delay_sample) {
@@ -731,7 +749,8 @@ namespace bt_utp {
         }
 
         double base_delay(conn &c, double sample) {
-            const auto bucket = static_cast<std::int64_t>(static_cast<double>(state.now) / 60.0);
+            const auto bucket =
+                static_cast<std::int64_t>(cadmium::log::to_sim_double(state.now) / 60.0);
             if (c.base_hist.empty() || c.base_hist.back().first != bucket) {
                 c.base_hist.emplace_back(bucket, sample);
             } else if (sample < c.base_hist.back().second) {
@@ -782,7 +801,7 @@ namespace bt_utp {
         void on_timeout(peer_id peer, conn &c) {
             ++state.timeouts;
             ++c.consecutive_timeouts;
-            c.timeout *= 2.0;
+            c.timeout       = c.timeout + c.timeout; // RTO doubling, no TIME multiply needed
             c.cwnd          = static_cast<double>(k_.min_packet);
             c.last_activity = state.now;
             if (c.state == conn_state::syn_sent) {
@@ -803,6 +822,11 @@ namespace bt_utp {
 
         peer_id self_{};
         utp_constants k_{};
+        // Sensible defaults for the default constructor (e.g. pack_engine's
+        // vector::resize()); the (peer_id, utp_constants) constructor
+        // overrides these from k's own min_timeout/initial_timeout.
+        TIME min_timeout_     = seconds_converter<TIME>::convert(0.5);
+        TIME initial_timeout_ = seconds_converter<TIME>::convert(1.0);
     };
 
 } // namespace bt_utp

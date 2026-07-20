@@ -26,7 +26,7 @@
 #include <cadmium/modeling/ports.hpp>
 
 #include "../../msg/net_frame.hpp"
-#include <concepts>
+#include "sim_time.hpp"
 #include <cstdint>
 #include <deque>
 #include <limits>
@@ -45,11 +45,11 @@ namespace bt_utp {
     /// FRAME defaulted to net_frame) keeps identical port types.
     using bottleneck_channel_defs = bottleneck_channel_defs_t<net_frame>;
 
-    // This experiment line uses floating-point simulation time in seconds
-    // (double in practice; any std::floating_point type satisfies the
-    // constraint). The constraint makes the assumption explicit rather than
-    // failing obscurely under the repo's non-arithmetic TIME variants.
-    template <std::floating_point TIME, typename FRAME = net_frame> class bottleneck_channel {
+    // SimTime (sim_time.hpp): double by default, but not restricted to
+    // std::floating_point — an exact-arithmetic TIME type (e.g.
+    // RationalTime) must be usable too, since DEVS causality is only exact
+    // under exact arithmetic (source-VDW14-devs-time-datatype.md).
+    template <SimTime TIME, typename FRAME = net_frame> class bottleneck_channel {
         using defs = bottleneck_channel_defs_t<FRAME>;
 
       public:

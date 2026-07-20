@@ -17,6 +17,28 @@
  * Both scenarios are fully deterministic (fixed channel params, a fixed
  * drop pattern, no randomness anywhere) so their outcomes are exact,
  * reproducible golden values, not statistical ranges.
+ *
+ * The scheduler's simultaneity check uses EXACT equality, not an epsilon
+ * tolerance. Per wiki/sources/source-VDW14-devs-time-datatype.md,
+ * epsilon-fudged simultaneity in DEVS hides float/double's accumulated
+ * rounding error instead of measuring it, and can silently merge or split
+ * events that exact DEVS semantics say should or shouldn't coincide — an
+ * unbounded, undetected causality error, not a cosmetic flakiness issue.
+ *
+ * utp_socket and bottleneck_channel are generic over TIME via the SimTime
+ * concept (sim_time.hpp), not restricted to std::floating_point, precisely
+ * so an exact-arithmetic TIME type can be substituted as a causality
+ * reference for double (this is the correct way to build confidence in
+ * float/double time: measure it against exact arithmetic, don't assume
+ * it). This file does not currently exercise that with RationalTime
+ * (../../rational_time.hpp): its naive long long numerator/denominator
+ * overflows within ~30-40 chained heterogeneous-denominator operations
+ * (confirmed with UBSan on a standalone probe mirroring utp_socket's RTT
+ * EWMA — `rtt += (sample - rtt) / 8` repeated with non-power-of-10 sample
+ * denominators), and a real transfer's RTT/RTO update count is far beyond
+ * that. Running the full protocol stack under RationalTime needs either an
+ * overflow-safe exact time type or a much narrower reference model first —
+ * a separate, properly-scoped follow-up, not a caveat to paper over here.
  */
 #include <cadmium/modeling/message_box.hpp>
 #include <cadmium/modeling/ports.hpp>
@@ -28,7 +50,6 @@
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
-#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -99,20 +120,6 @@ namespace {
                        : last + sigma;
         }
 
-        /// Simultaneity tolerance for "is this atom imminent at `now`":
-        /// absolute event times reach `now` via different chains of
-        /// floating-point additions per atom, so exact `==` can split
-        /// events that should fire together into separate micro-steps on
-        /// ULP-level rounding differences. 1e-9 s is many orders of
-        /// magnitude below any real time granularity these scenarios use
-        /// (microsecond-scale timestamps at the finest) and comfortably
-        /// above double's relative epsilon at these magnitudes.
-        static constexpr double simultaneity_eps = 1e-9;
-
-        static bool imminent_at(double an_x, double now) {
-            return std::abs(an_x - now) <= simultaneity_eps;
-        }
-
         /// Runs until quiescent (all atoms passive) or t_max, whichever
         /// comes first. Returns the final simulation time reached.
         double run(double t_max) {
@@ -136,11 +143,12 @@ namespace {
 
                 // Capture outputs of every imminent atom before mutating
                 // any state, then apply internal transitions, then route.
-                const bool src_up = imminent_at(an_source, now);
-                const bool a_up   = imminent_at(an_a, now);
-                const bool b_up   = imminent_at(an_b, now);
-                const bool ab_up  = imminent_at(an_ab, now);
-                const bool ba_up  = imminent_at(an_ba, now);
+                // Exact equality, not an epsilon tolerance: see file header.
+                const bool src_up = an_source == now;
+                const bool a_up   = an_a == now;
+                const bool b_up   = an_b == now;
+                const bool ab_up  = an_ab == now;
+                const bool ba_up  = an_ba == now;
 
                 std::optional<sdefs::send_req> src_out;
                 std::optional<frame_t> a_out_net, ab_out, ba_out;
