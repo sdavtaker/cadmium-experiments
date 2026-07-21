@@ -12,28 +12,29 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <stdexcept>
 #include <utility>
 #include <variant>
 #include <vector>
 
-using bt_utp::bep3_msg;
-using bt_utp::bitfield;
-using bt_utp::cancel;
-using bt_utp::choke;
-using bt_utp::choke_cmd;
-using bt_utp::handshake;
-using bt_utp::have;
-using bt_utp::interested;
-using bt_utp::not_interested;
-using bt_utp::peer_wire;
-using bt_utp::piece;
-using bt_utp::request;
-using bt_utp::request_plan;
-using bt_utp::sub_piece_id;
-using bt_utp::unchoke;
-using bt_utp::wire_msg;
-
 namespace {
+
+    using bt_utp::bep3_msg;
+    using bt_utp::bitfield;
+    using bt_utp::cancel;
+    using bt_utp::choke;
+    using bt_utp::choke_cmd;
+    using bt_utp::handshake;
+    using bt_utp::have;
+    using bt_utp::interested;
+    using bt_utp::not_interested;
+    using bt_utp::peer_wire;
+    using bt_utp::piece;
+    using bt_utp::request;
+    using bt_utp::request_plan;
+    using bt_utp::sub_piece_id;
+    using bt_utp::unchoke;
+    using bt_utp::wire_msg;
 
     using pw_t   = peer_wire<double>;
     using defs   = pw_t::defs;

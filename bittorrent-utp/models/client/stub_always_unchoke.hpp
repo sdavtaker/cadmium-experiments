@@ -12,6 +12,7 @@
 #include <cadmium/modeling/message_box.hpp>
 #include <cadmium/modeling/ports.hpp>
 
+#include "../utp/sim_time.hpp"
 #include "peer_wire.hpp"
 #include <deque>
 #include <limits>

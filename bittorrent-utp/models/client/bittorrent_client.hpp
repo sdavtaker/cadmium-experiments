@@ -35,6 +35,7 @@
 
 #include <cadmium/engine/devs_engine_helpers.hpp>
 #include <cadmium/modeling/coupling.hpp>
+#include <cadmium/modeling/ports.hpp>
 
 #include "../utp/utp_socket.hpp"
 #include "peer_wire.hpp"

@@ -13,6 +13,11 @@
 #include <cadmium/engine/devs_coordinator.hpp>
 
 #include "../models/client/bittorrent_client.hpp"
+#include "../models/client/peer_wire.hpp"
+#include "../models/client/stub_always_unchoke.hpp"
+#include "../models/client/stub_sequential_selector.hpp"
+#include "../models/utp/utp_socket.hpp"
+#include "../msg/peer_id.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 #include <limits>

@@ -35,6 +35,7 @@
 #include <cadmium/modeling/ports.hpp>
 
 #include "../../msg/peer_id.hpp"
+#include "../utp/sim_time.hpp"
 #include "peer_wire.hpp"
 #include <cstdint>
 #include <deque>
