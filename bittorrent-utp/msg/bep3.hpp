@@ -79,35 +79,35 @@ namespace bt_utp {
     struct keepalive {
         friend bool operator==(const keepalive &, const keepalive &) = default;
 
-        [[nodiscard]] static std::uint64_t wire_size() {
+        [[nodiscard]] std::uint64_t wire_size() const {
             return bep3_length_prefix_bytes;
         }
     };
     struct choke {
         friend bool operator==(const choke &, const choke &) = default;
 
-        [[nodiscard]] static std::uint64_t wire_size() {
+        [[nodiscard]] std::uint64_t wire_size() const {
             return bep3_length_prefix_bytes + bep3_id_bytes;
         }
     };
     struct unchoke {
         friend bool operator==(const unchoke &, const unchoke &) = default;
 
-        [[nodiscard]] static std::uint64_t wire_size() {
+        [[nodiscard]] std::uint64_t wire_size() const {
             return bep3_length_prefix_bytes + bep3_id_bytes;
         }
     };
     struct interested {
         friend bool operator==(const interested &, const interested &) = default;
 
-        [[nodiscard]] static std::uint64_t wire_size() {
+        [[nodiscard]] std::uint64_t wire_size() const {
             return bep3_length_prefix_bytes + bep3_id_bytes;
         }
     };
     struct not_interested {
         friend bool operator==(const not_interested &, const not_interested &) = default;
 
-        [[nodiscard]] static std::uint64_t wire_size() {
+        [[nodiscard]] std::uint64_t wire_size() const {
             return bep3_length_prefix_bytes + bep3_id_bytes;
         }
     };
@@ -117,7 +117,7 @@ namespace bt_utp {
 
         friend bool operator==(const have &, const have &) = default;
 
-        [[nodiscard]] static std::uint64_t wire_size() {
+        [[nodiscard]] std::uint64_t wire_size() const {
             return bep3_length_prefix_bytes + bep3_id_bytes + 4;
         }
     };
@@ -142,7 +142,7 @@ namespace bt_utp {
 
         friend bool operator==(const request &, const request &) = default;
 
-        [[nodiscard]] static std::uint64_t wire_size() {
+        [[nodiscard]] std::uint64_t wire_size() const {
             return bep3_length_prefix_bytes + bep3_id_bytes + 12;
         }
     };
@@ -166,7 +166,7 @@ namespace bt_utp {
 
         friend bool operator==(const cancel &, const cancel &) = default;
 
-        [[nodiscard]] static std::uint64_t wire_size() {
+        [[nodiscard]] std::uint64_t wire_size() const {
             return bep3_length_prefix_bytes + bep3_id_bytes + 12;
         }
     };

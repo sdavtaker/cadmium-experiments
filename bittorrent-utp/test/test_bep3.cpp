@@ -7,7 +7,9 @@
 #include "../msg/bep3.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <sstream>
+#include <string>
 #include <variant>
+#include <vector>
 
 namespace {
 
@@ -78,11 +80,37 @@ TEST_CASE("bep3_msg variant: each alternative round-trips and dispatches wire_si
 
 TEST_CASE("bep3: messages stream to non-empty human-readable text") {
     std::ostringstream os;
-    os << handshake{} << " " << bep3_msg{have{5}} << " " << bep3_msg{request{1, 0, 100}};
+    os << handshake{} << " " << bep3_msg{have{5}} << " " << bep3_msg{request{1, 0, 100}} << " "
+       << bep3_msg{piece{1, 0, 100}} << " " << bep3_msg{cancel{1, 0, 100}} << " "
+       << bep3_msg{keepalive{}} << " " << bep3_msg{choke{}} << " " << bep3_msg{unchoke{}} << " "
+       << bep3_msg{interested{}} << " " << bep3_msg{not_interested{}} << " "
+       << bep3_msg{bitfield{{true, false, true}}};
     const std::string s = os.str();
     CHECK(s.find("HANDSHAKE") != std::string::npos);
     CHECK(s.find("HAVE idx:5") != std::string::npos);
     CHECK(s.find("REQUEST idx:1") != std::string::npos);
+    CHECK(s.find("PIECE idx:1") != std::string::npos);
+    CHECK(s.find("CANCEL idx:1") != std::string::npos);
+    CHECK(s.find("KEEPALIVE") != std::string::npos);
+    CHECK(s.find("CHOKE") != std::string::npos);
+    CHECK(s.find("UNCHOKE") != std::string::npos);
+    CHECK(s.find("INTERESTED") != std::string::npos);
+    CHECK(s.find("NOT_INTERESTED") != std::string::npos);
+    CHECK(s.find("BITFIELD held:2/3") != std::string::npos);
+}
+
+TEST_CASE("bep3: handshake's operator<< restores the caller's stream state") {
+    // Regression test for the bug fixed in 1d8787c/0c2fefc: streaming a
+    // handshake sets std::hex and a '0' fill internally to print
+    // zero-padded hex bytes, and must not leak that into whatever the
+    // caller streams next.
+    std::ostringstream os;
+    os << handshake{} << 10;
+    const std::string s = os.str();
+    // If hex/fill leaked, the trailing "10" would print as "a" (10 in hex)
+    // instead — checking the exact suffix, not just substring presence,
+    // since a leaked '0' fill could still contain a "1" or "0" elsewhere.
+    CHECK(s.substr(s.size() - 2) == "10");
 }
 
 TEST_CASE("bep3: equality comparisons hold field-by-field") {
