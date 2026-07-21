@@ -111,7 +111,18 @@ namespace bt_utp {
         using output_ports = std::tuple<typename defs::out>;
 
         void internal_transition() {
+            // A coordinator only calls internal_transition() on an
+            // imminent model (time_advance() == 0); reaching this while
+            // genuinely passive (sigma == infinity) is a DEVS
+            // calling-contract violation, not a state this atomic's own
+            // logic can produce — and aging by an infinite sigma would
+            // silently corrupt server_free_rem, so this must fail loudly
+            // rather than let that happen.
             const TIME sigma = time_advance();
+            if (sigma == std::numeric_limits<TIME>::infinity()) {
+                throw std::logic_error("bottleneck_channel::internal_transition called while "
+                                       "passive");
+            }
             age(sigma);
             if (!state.pending.empty() && !(state.pending.front().delivery_rem > TIME{})) {
                 ++state.forwarded;
@@ -146,6 +157,9 @@ namespace bt_utp {
         }
 
         typename cadmium::make_message_box<output_ports>::type output() const {
+            if (time_advance() == std::numeric_limits<TIME>::infinity()) {
+                throw std::logic_error("bottleneck_channel::output called while passive");
+            }
             typename cadmium::make_message_box<output_ports>::type box;
             if (!state.pending.empty()) {
                 cadmium::get_message<typename defs::out>(box).emplace(state.pending.front().frame);

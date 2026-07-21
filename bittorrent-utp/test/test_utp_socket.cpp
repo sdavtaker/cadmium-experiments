@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <limits>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -105,6 +106,13 @@ namespace {
     }
 
 } // namespace
+
+TEST_CASE("utp_socket: output()/internal_transition() reject being called while passive") {
+    sock_t sock(1, utp_constants{}); // no connections, no timers armed: passive
+    REQUIRE(sock.time_advance() == std::numeric_limits<double>::infinity());
+    CHECK_THROWS_AS(sock.output(), std::logic_error);
+    CHECK_THROWS_AS(sock.internal_transition(), std::logic_error);
+}
 
 TEST_CASE("utp_socket: handshake connects both endpoints and delivers first chunk") {
     pair_harness h{utp_constants{}, utp_constants{}};
