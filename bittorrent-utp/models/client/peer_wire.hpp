@@ -272,6 +272,16 @@ namespace bt_utp {
         using output_ports = std::tuple<typename defs::wire_out, typename defs::obs_out>;
 
         void internal_transition() {
+            // A coordinator only calls internal_transition() on an
+            // imminent model (time_advance() == 0), which requires at
+            // least one of the two output queues non-empty — *either*
+            // alone being empty is legitimate (a tick can produce only a
+            // wire message, only an observation, or both), but both empty
+            // together means the DEVS calling contract was violated, not
+            // a state this atomic's own logic can produce.
+            if (state.out_wire.empty() && state.out_obs.empty()) {
+                throw std::logic_error("peer_wire::internal_transition called while passive");
+            }
             if (!state.out_wire.empty()) {
                 state.out_wire.pop_front();
             }
@@ -300,6 +310,11 @@ namespace bt_utp {
         }
 
         typename cadmium::make_message_box<output_ports>::type output() const {
+            // Same contract as internal_transition(): at least one queue
+            // must be non-empty here.
+            if (state.out_wire.empty() && state.out_obs.empty()) {
+                throw std::logic_error("peer_wire::output called while passive");
+            }
             typename cadmium::make_message_box<output_ports>::type box;
             if (!state.out_wire.empty()) {
                 const auto &[dst, msg] = state.out_wire.front();

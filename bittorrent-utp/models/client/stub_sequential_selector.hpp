@@ -42,6 +42,7 @@
 #include <limits>
 #include <map>
 #include <ostream>
+#include <stdexcept>
 #include <tuple>
 #include <utility>
 #include <variant>
@@ -82,9 +83,16 @@ namespace bt_utp {
         using output_ports = std::tuple<typename defs::plan_out>;
 
         void internal_transition() {
-            if (!state.pending.empty()) {
-                state.pending.pop_front();
+            // Same contract as stub_always_unchoke: a coordinator only
+            // calls internal_transition() when time_advance() == 0, which
+            // requires pending non-empty — an empty queue here means the
+            // DEVS calling contract was violated, not a state this
+            // atomic's own logic can produce, so fail loudly.
+            if (state.pending.empty()) {
+                throw std::logic_error(
+                    "stub_sequential_selector::internal_transition called while passive");
             }
+            state.pending.pop_front();
         }
 
         void external_transition(TIME, typename cadmium::make_message_box<input_ports>::type box) {
@@ -102,10 +110,11 @@ namespace bt_utp {
         }
 
         typename cadmium::make_message_box<output_ports>::type output() const {
-            typename cadmium::make_message_box<output_ports>::type box;
-            if (!state.pending.empty()) {
-                cadmium::get_message<typename defs::plan_out>(box).emplace(state.pending.front());
+            if (state.pending.empty()) {
+                throw std::logic_error("stub_sequential_selector::output called while passive");
             }
+            typename cadmium::make_message_box<output_ports>::type box;
+            cadmium::get_message<typename defs::plan_out>(box).emplace(state.pending.front());
             return box;
         }
 

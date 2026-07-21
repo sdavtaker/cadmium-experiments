@@ -21,6 +21,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 #include <limits>
+#include <stdexcept>
 #include <vector>
 
 namespace {
@@ -65,4 +66,20 @@ TEST_CASE("bittorrent_client: coupling constructs and schedules through a real c
     coord.collect_outputs(next);
     coord.advance_simulation(next);
     CHECK(coord.next() >= next); // still a well-formed schedule after one step
+}
+
+TEST_CASE("stub_always_unchoke: output()/internal_transition() reject being called while "
+          "passive") {
+    bt_utp::stub_always_unchoke<double> policy; // no obs seen yet: passive
+    REQUIRE(policy.time_advance() == std::numeric_limits<double>::infinity());
+    CHECK_THROWS_AS(policy.output(), std::logic_error);
+    CHECK_THROWS_AS(policy.internal_transition(), std::logic_error);
+}
+
+TEST_CASE("stub_sequential_selector: output()/internal_transition() reject being called "
+          "while passive") {
+    bt_utp::stub_sequential_selector<double> selector(sub_pieces_per_piece); // no plan yet
+    REQUIRE(selector.time_advance() == std::numeric_limits<double>::infinity());
+    CHECK_THROWS_AS(selector.output(), std::logic_error);
+    CHECK_THROWS_AS(selector.internal_transition(), std::logic_error);
 }

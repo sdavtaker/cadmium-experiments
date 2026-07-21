@@ -78,6 +78,17 @@ namespace {
 
 } // namespace
 
+TEST_CASE("peer_wire: output()/internal_transition() reject being called while passive") {
+    // A correctly-functioning coordinator only calls these when
+    // time_advance() == 0; calling them on a passive model is a DEVS
+    // calling-contract violation this atomic must surface loudly rather
+    // than silently no-op.
+    pw_t pw(2, 2, 100, {false, false}); // no connect_to: passive from construction
+    REQUIRE(pw.time_advance() == std::numeric_limits<double>::infinity());
+    CHECK_THROWS_AS(pw.output(), std::logic_error);
+    CHECK_THROWS_AS(pw.internal_transition(), std::logic_error);
+}
+
 TEST_CASE("peer_wire: constructs and validates its geometry parameters") {
     peer_wire<double> pw(4, 2, 100, {true, true, true, true});
     CHECK(pw.time_advance() == std::numeric_limits<double>::infinity());

@@ -17,6 +17,7 @@
 #include <deque>
 #include <limits>
 #include <ostream>
+#include <stdexcept>
 #include <tuple>
 #include <variant>
 
@@ -46,9 +47,17 @@ namespace bt_utp {
         using output_ports = std::tuple<typename defs::choke_cmd_out>;
 
         void internal_transition() {
-            if (!state.pending.empty()) {
-                state.pending.pop_front();
+            // A coordinator only calls internal_transition() on an
+            // imminent model (time_advance() == 0), which for this atomic
+            // means pending is non-empty by construction — reaching this
+            // with an empty queue means the DEVS calling contract itself
+            // was violated (not a state this atomic's own logic can ever
+            // produce), so fail loudly instead of silently doing nothing.
+            if (state.pending.empty()) {
+                throw std::logic_error(
+                    "stub_always_unchoke::internal_transition called while passive");
             }
+            state.pending.pop_front();
         }
 
         void external_transition(TIME, typename cadmium::make_message_box<input_ports>::type box) {
@@ -63,11 +72,14 @@ namespace bt_utp {
         }
 
         typename cadmium::make_message_box<output_ports>::type output() const {
-            typename cadmium::make_message_box<output_ports>::type box;
-            if (!state.pending.empty()) {
-                cadmium::get_message<typename defs::choke_cmd_out>(box).emplace(
-                    state.pending.front());
+            // Same contract as internal_transition(): a coordinator only
+            // calls output() on an imminent model, so pending must be
+            // non-empty here too.
+            if (state.pending.empty()) {
+                throw std::logic_error("stub_always_unchoke::output called while passive");
             }
+            typename cadmium::make_message_box<output_ports>::type box;
+            cadmium::get_message<typename defs::choke_cmd_out>(box).emplace(state.pending.front());
             return box;
         }
 
