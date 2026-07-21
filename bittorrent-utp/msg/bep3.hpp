@@ -15,7 +15,9 @@
  */
 #pragma once
 
+#include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <ios>
 #include <ostream>
@@ -42,11 +44,16 @@ namespace bt_utp {
         std::array<std::uint8_t, 20> info_hash{};
         std::array<std::uint8_t, 20> peer_id{};
 
-        /// <pstrlen><pstr><8 reserved bytes><info_hash><peer_id>, all
-        /// fixed-length except pstr, whose length is a function of proto.
+        /// <pstrlen><pstr><8 reserved bytes><info_hash><peer_id>. The 8
+        /// reserved bytes are always zero in every handshake this project
+        /// models (no extension flags in scope), so they're accounted for
+        /// here as a constant rather than stored as a field — same
+        /// modeling choice as proto: nothing this project does varies
+        /// them, so there's nothing for a field to represent.
         [[nodiscard]] std::uint64_t wire_size() const {
-            const std::uint64_t pstrlen = proto == protocol_id::bittorrent_1_0 ? 19 : 0;
-            return 1 + pstrlen + 8 + info_hash.size() + peer_id.size();
+            const std::uint64_t pstrlen            = proto == protocol_id::bittorrent_1_0 ? 19 : 0;
+            constexpr std::uint64_t reserved_bytes = 8;
+            return 1 + pstrlen + reserved_bytes + info_hash.size() + peer_id.size();
         }
 
         friend bool operator==(const handshake &, const handshake &) = default;
@@ -172,11 +179,9 @@ namespace bt_utp {
         return os << "HAVE idx:" << h.index;
     }
     inline std::ostream &operator<<(std::ostream &os, const bitfield &b) {
-        os << "BITFIELD[" << b.pieces.size() << "]:";
-        for (bool p : b.pieces) {
-            os << (p ? '1' : '0');
-        }
-        return os;
+        const auto held =
+            static_cast<std::size_t>(std::count(b.pieces.begin(), b.pieces.end(), true));
+        return os << "BITFIELD held:" << held << "/" << b.pieces.size();
     }
     inline std::ostream &operator<<(std::ostream &os, const request &r) {
         return os << "REQUEST idx:" << r.index << " begin:" << r.begin << " len:" << r.length;

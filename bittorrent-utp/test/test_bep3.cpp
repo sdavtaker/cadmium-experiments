@@ -9,7 +9,23 @@
 #include <sstream>
 #include <variant>
 
-using namespace bt_utp;
+namespace {
+
+    using bt_utp::bep3_msg;
+    using bt_utp::bitfield;
+    using bt_utp::cancel;
+    using bt_utp::choke;
+    using bt_utp::handshake;
+    using bt_utp::have;
+    using bt_utp::interested;
+    using bt_utp::keepalive;
+    using bt_utp::not_interested;
+    using bt_utp::piece;
+    using bt_utp::request;
+    using bt_utp::unchoke;
+    using bt_utp::wire_size;
+
+} // namespace
 
 TEST_CASE("bep3: handshake wire size is pstrlen + fixed fields") {
     handshake h{};
