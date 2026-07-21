@@ -17,6 +17,7 @@
 
 #include <array>
 #include <cstdint>
+#include <ios>
 #include <ostream>
 #include <variant>
 #include <vector>
@@ -52,6 +53,7 @@ namespace bt_utp {
     };
 
     inline std::ostream &operator<<(std::ostream &os, const handshake &h) {
+        const std::ios::fmtflags saved = os.flags();
         os << "HANDSHAKE info_hash:" << std::hex;
         for (auto b : h.info_hash) {
             os << static_cast<int>(b);
@@ -60,7 +62,8 @@ namespace bt_utp {
         for (auto b : h.peer_id) {
             os << static_cast<int>(b);
         }
-        return os << std::dec;
+        os.flags(saved);
+        return os;
     }
 
     struct keepalive {
@@ -100,7 +103,7 @@ namespace bt_utp {
     };
 
     struct have {
-        std::uint32_t piece_index{};
+        std::uint32_t index{};
 
         friend bool operator==(const have &, const have &) = default;
 
@@ -166,7 +169,7 @@ namespace bt_utp {
     }
 
     inline std::ostream &operator<<(std::ostream &os, const have &h) {
-        return os << "HAVE idx:" << h.piece_index;
+        return os << "HAVE idx:" << h.index;
     }
     inline std::ostream &operator<<(std::ostream &os, const bitfield &b) {
         os << "BITFIELD[" << b.pieces.size() << "]:";

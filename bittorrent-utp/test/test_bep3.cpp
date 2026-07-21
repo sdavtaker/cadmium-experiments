@@ -17,8 +17,11 @@ TEST_CASE("bep3: handshake wire size is pstrlen + fixed fields") {
     CHECK(h.wire_size() == 68);
 }
 
-TEST_CASE("bep3: fixed-length message wire sizes are length-prefix + id, no payload") {
+TEST_CASE("bep3: keepalive wire size is the length prefix alone, no id byte") {
     CHECK(keepalive{}.wire_size() == 4);
+}
+
+TEST_CASE("bep3: flag message wire sizes are length-prefix + id, no payload") {
     CHECK(choke{}.wire_size() == 5);
     CHECK(unchoke{}.wire_size() == 5);
     CHECK(interested{}.wire_size() == 5);
@@ -45,7 +48,7 @@ TEST_CASE("bep3: bitfield wire size is ceil(num_pieces/8) bytes") {
 TEST_CASE("bep3_msg variant: each alternative round-trips and dispatches wire_size") {
     bep3_msg m = have{3};
     REQUIRE(std::holds_alternative<have>(m));
-    CHECK(std::get<have>(m).piece_index == 3);
+    CHECK(std::get<have>(m).index == 3);
     CHECK(wire_size(m) == have{3}.wire_size());
 
     m = piece{1, 0, 1000};
