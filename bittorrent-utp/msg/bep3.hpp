@@ -171,11 +171,28 @@ namespace bt_utp {
         }
     };
 
-    using bep3_msg = std::variant<keepalive, choke, unchoke, interested, not_interested, have,
-                                  bitfield, request, piece, cancel>;
+    using bep3_variant = std::variant<keepalive, choke, unchoke, interested, not_interested, have,
+                                      bitfield, request, piece, cancel>;
+
+    /// Publicly derives from the variant (C++23 permits std::visit/get/
+    /// holds_alternative on a type derived from std::variant, P2162) rather
+    /// than just aliasing it, so bep3_msg can be a utp_socket PAYLOAD: the
+    /// socket calls payload.wire_size() as a *member*, matching every other
+    /// PAYLOAD type this project uses (app_chunk), and std::get/
+    /// holds_alternative/std::visit on a bep3_msg keep working exactly as
+    /// they did when it was a bare variant alias.
+    struct bep3_msg : bep3_variant {
+        using bep3_variant::bep3_variant;
+
+        friend bool operator==(const bep3_msg &, const bep3_msg &) = default;
+
+        [[nodiscard]] std::uint64_t wire_size() const {
+            return std::visit([](const auto &alt) { return alt.wire_size(); }, *this);
+        }
+    };
 
     [[nodiscard]] inline std::uint64_t wire_size(const bep3_msg &m) {
-        return std::visit([](const auto &alt) { return alt.wire_size(); }, m);
+        return m.wire_size();
     }
 
     inline std::ostream &operator<<(std::ostream &os, const have &h) {

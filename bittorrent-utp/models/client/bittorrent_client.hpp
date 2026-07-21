@@ -1,0 +1,79 @@
+// SPDX-License-Identifier: BSD-2-Clause
+/**
+ * bittorrent_client: the coupled model wiring one uTP socket, one peer_wire
+ * FSM, and the two policy slots (choking policy, piece selector) into a
+ * single client component — decision 0.3.5's "coupled shape from day one":
+ * stage 3 plugs in the stub policies with FINAL ports; stage 4 swaps only
+ * the policy atomic types, unchanged wiring.
+ *
+ * SOCKET/WIRE/CHOKE_POLICY/SELECTOR are template-template parameters, not
+ * bare constructor calls, because none of the four submodels are
+ * default-constructible (utp_socket needs a self peer_id; peer_wire needs
+ * piece geometry, initial possession, and an optional connect-to peer;
+ * stub_sequential_selector needs sub_pieces_per_piece) — cadmium's
+ * models_tuple requires default-constructible `template<typename TIME>
+ * class` submodels, so each caller supplies a thin per-instance wrapper
+ * that bakes its own constructor arguments into a default constructor
+ * (the same pattern test_msg_channel.cpp uses for bottleneck_channel).
+ * Each wrapper must publicly inherit from exactly utp_socket<TIME,
+ * wire_msg>, peer_wire<TIME>, a ChokingPolicy-shaped atomic, and a
+ * PieceSelector-shaped atomic respectively — this coupling's IC/EIC/EOC
+ * entries reference their port types directly (peer_wire_defs,
+ * stub_always_unchoke_defs, stub_sequential_selector_defs,
+ * utp_socket_defs_t<wire_msg>), which is what "ports final now" commits
+ * to: a stage-4 real ChokingPolicy/PieceSelector must expose the same
+ * obs_in/choke_cmd_out and obs_in/plan_out port *names* to drop into this
+ * same coupling unmodified.
+ *
+ * models_tuple order is SOCKET, WIRE, SELECTOR, CHOKE_POLICY — matching
+ * decision 0.7's SELECT tie-break priority (channels -> sockets ->
+ * peer_wire -> piece_selector -> choking_policy -> everything else):
+ * cadmium::engine::devs::first_imminent picks the lowest tuple index among
+ * simultaneously-imminent submodels, so this order *is* the priority.
+ */
+#pragma once
+
+#include <cadmium/engine/devs_engine_helpers.hpp>
+#include <cadmium/modeling/coupling.hpp>
+
+#include "../utp/utp_socket.hpp"
+#include "peer_wire.hpp"
+#include "stub_always_unchoke.hpp"
+#include "stub_sequential_selector.hpp"
+#include <tuple>
+
+namespace bt_utp {
+
+    struct bittorrent_client_defs {
+        using net_frame_t = typename utp_socket_defs_t<wire_msg>::frame_t;
+
+        struct net_in : public cadmium::in_port<net_frame_t> {};
+        struct net_out : public cadmium::out_port<net_frame_t> {};
+    };
+
+    template <typename TIME, template <typename> class SOCKET, template <typename> class WIRE,
+              template <typename> class CHOKE_POLICY, template <typename> class SELECTOR>
+    using bittorrent_client = cadmium::modeling::devs::coupling<
+        TIME, std::tuple<typename bittorrent_client_defs::net_in>,
+        std::tuple<typename bittorrent_client_defs::net_out>,
+        cadmium::modeling::models_tuple<SOCKET, WIRE, SELECTOR, CHOKE_POLICY>,
+        std::tuple<cadmium::modeling::EIC<typename bittorrent_client_defs::net_in, SOCKET,
+                                          typename utp_socket_defs_t<wire_msg>::net_in>>,
+        std::tuple<cadmium::modeling::EOC<SOCKET, typename utp_socket_defs_t<wire_msg>::net_out,
+                                          typename bittorrent_client_defs::net_out>>,
+        std::tuple<
+            cadmium::modeling::IC<SOCKET, typename utp_socket_defs_t<wire_msg>::app_deliver, WIRE,
+                                  typename peer_wire_defs::wire_in>,
+            cadmium::modeling::IC<WIRE, typename peer_wire_defs::wire_out, SOCKET,
+                                  typename utp_socket_defs_t<wire_msg>::app_send>,
+            cadmium::modeling::IC<WIRE, typename peer_wire_defs::obs_out, SELECTOR,
+                                  typename stub_sequential_selector_defs::obs_in>,
+            cadmium::modeling::IC<WIRE, typename peer_wire_defs::obs_out, CHOKE_POLICY,
+                                  typename stub_always_unchoke_defs::obs_in>,
+            cadmium::modeling::IC<SELECTOR, typename stub_sequential_selector_defs::plan_out, WIRE,
+                                  typename peer_wire_defs::plan_in>,
+            cadmium::modeling::IC<CHOKE_POLICY, typename stub_always_unchoke_defs::choke_cmd_out,
+                                  WIRE, typename peer_wire_defs::choke_cmd_in>>,
+        cadmium::engine::devs::first_imminent>;
+
+} // namespace bt_utp
