@@ -159,6 +159,21 @@ TEST_CASE("peer_wire: interest flag is recomputed from a have delta") {
     CHECK(drain_wire(pw).empty());
 }
 
+TEST_CASE("peer_wire: have/bitfield indices beyond total_pieces are rejected") {
+    pw_t pw(2, 2, 100, {false, false}, /*connect_to=*/7); // total_pieces == 2
+    drain_wire(pw);
+    pw.external_transition(0.0, wire_in_box(7, wire_msg{handshake{}}));
+    drain_wire(pw);
+
+    // have{2} is out of range for a 2-piece swarm (valid indices: 0, 1).
+    pw.external_transition(0.0, wire_in_box(7, wire_msg{bep3_msg{have{2}}}));
+    CHECK(drain_wire(pw).empty()); // rejected: no interest flip, nothing queued
+
+    // A 3-entry bitfield for a 2-piece swarm is likewise out of range.
+    pw.external_transition(0.0, wire_in_box(7, wire_msg{bep3_msg{bitfield{{true, true, true}}}}));
+    CHECK(drain_wire(pw).empty());
+}
+
 TEST_CASE("peer_wire: interest flag is recomputed after our own piece completion") {
     // Regression test: our own have[] changing (via a completed download)
     // is a have delta exactly like the peer's, and must re-trigger
@@ -319,17 +334,27 @@ TEST_CASE("peer_wire: an out-of-range sub-piece offset in a piece message is rej
 }
 
 TEST_CASE("peer_wire: a piece message whose begin isn't a sub-piece boundary is rejected") {
+    // Plan *both* sub-pieces of the one piece so sub-piece 1 (the id
+    // begin=150 maps onto via integer division) is genuinely outstanding
+    // — otherwise the outstanding-match guard alone would reject this
+    // message regardless of the alignment check, and the test wouldn't
+    // actually isolate what it claims to test.
     pw_t pw(1, 2, 100, {false}, /*connect_to=*/7);
     drain_wire(pw);
     pw.external_transition(0.0, wire_in_box(7, wire_msg{handshake{}}));
     drain_wire(pw);
-    pw.external_transition(0.0, plan_box(7, {{0, 0}}));
+    pw.external_transition(0.0, plan_box(7, {{0, 0}, {0, 1}}));
     pw.external_transition(0.0, wire_in_box(7, wire_msg{bep3_msg{unchoke{}}}));
-    drain_wire(pw);
+    REQUIRE(drain_wire(pw).size() == 2); // both sub-pieces requested
 
-    // begin=150 is in-range (150/100 == 1 < 2 sub-pieces) but not a
-    // multiple of sub_piece_bytes=100 — integer division would otherwise
-    // silently accept this as sub-piece 1 instead of rejecting it.
+    // Legitimate delivery of sub-piece 0 first (partial completion only).
+    pw.external_transition(0.0, wire_in_box(7, wire_msg{bep3_msg{piece{0, 0, 100}}}));
+    CHECK(drain_wire(pw).empty());
+
+    // begin=150 is in-range (150/100 == 1 < 2 sub-pieces) and sub-piece 1
+    // *is* outstanding, but 150 isn't a multiple of sub_piece_bytes=100 —
+    // without the alignment check, integer division would accept this as
+    // sub-piece 1, complete the piece, and emit `have`.
     pw.external_transition(0.0, wire_in_box(7, wire_msg{bep3_msg{piece{0, 150, 100}}}));
     CHECK(drain_wire(pw).empty());
 }

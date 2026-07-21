@@ -457,14 +457,18 @@ namespace bt_utp {
                             c.in_progress.erase(alt.index);
                             queue_to(src, wire_msg{bep3_msg{have{alt.index}}});
                             // Our own have[] just changed — a have/bitfield
-                            // delta either way, so interest toward this
-                            // peer must be recomputed the same as when
-                            // *their* availability changes (recompute_interest
-                            // is only ever called from the peer-availability
-                            // handlers otherwise, which would leave
-                            // am_interested stale after we finish acquiring
-                            // exactly what made us interested).
-                            recompute_interest(src, c);
+                            // delta either way, so interest must be
+                            // recomputed toward *every* connection, not
+                            // just src: finishing a piece can also make us
+                            // no longer interested in a different peer
+                            // whose only useful piece was the one we just
+                            // acquired. peer_wire is multiplexed by
+                            // peer_id from the start (decision 0.5)
+                            // specifically so this generalizes past this
+                            // stage's single connection.
+                            for (auto &[peer, conn_ref] : state.conns) {
+                                recompute_interest(peer, conn_ref);
+                            }
                         }
                         state.out_obs.push_back(obs_completion{src, alt.index, piece_done});
                         fill_pipeline(src, c);

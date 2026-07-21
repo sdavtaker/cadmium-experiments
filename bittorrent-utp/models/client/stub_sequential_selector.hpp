@@ -1,10 +1,19 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /**
  * stub_sequential_selector: stage-3 PieceSelector placeholder — a
- * "fixed/sequential pattern": plan the lowest-index piece the peer
- * has that we haven't already planned, sub-pieces in ascending order,
- * one piece at a time. Ports/coupling are the final stage-4 shape; only
- * this atomic's trivial strategy gets replaced by a real PieceSelector.
+ * "fixed/sequential pattern": a monotonic per-peer cursor starting at
+ * piece 0, planned (sub-pieces in ascending order) only once the peer's
+ * bitfield shows they hold the piece currently at the cursor; if they
+ * don't, the cursor stalls until an availability update or completion
+ * event re-checks it. This does not scan ahead for the lowest piece the
+ * peer *does* have (a peer missing exactly the cursor piece stalls this
+ * connection entirely), and it never checks this client's own possession
+ * (`state.have`), so it can re-plan a piece already held. Both are fine
+ * for this stage's synthetic full-bitfield seed scenarios, but neither
+ * is "the lowest-index piece the peer has that we haven't already
+ * planned" in general — only a real PieceSelector needs to actually be
+ * that. Ports/coupling are the final stage-4 shape; only this atomic's
+ * trivial strategy gets replaced by a real PieceSelector.
  *
  * Planning happens independently of choke state (peer_wire itself queues
  * planned-but-not-yet-requested sub-pieces and only issues `request`s once
@@ -25,6 +34,7 @@
 #include <cadmium/modeling/message_box.hpp>
 #include <cadmium/modeling/ports.hpp>
 
+#include "../../msg/peer_id.hpp"
 #include "peer_wire.hpp"
 #include <cstdint>
 #include <deque>
