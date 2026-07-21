@@ -76,6 +76,22 @@ TEST_CASE("bep3_msg variant: each alternative round-trips and dispatches wire_si
     m = choke{};
     REQUIRE(std::holds_alternative<choke>(m));
     CHECK(wire_size(m) == choke{}.wire_size());
+
+    m = keepalive{};
+    REQUIRE(std::holds_alternative<keepalive>(m));
+    CHECK(wire_size(m) == keepalive{}.wire_size());
+
+    m = bitfield{{true, false, true}};
+    REQUIRE(std::holds_alternative<bitfield>(m));
+    CHECK(wire_size(m) == bitfield{{true, false, true}}.wire_size());
+
+    m = request{1, 2, 3};
+    REQUIRE(std::holds_alternative<request>(m));
+    CHECK(wire_size(m) == request{1, 2, 3}.wire_size());
+
+    m = cancel{1, 2, 3};
+    REQUIRE(std::holds_alternative<cancel>(m));
+    CHECK(wire_size(m) == cancel{1, 2, 3}.wire_size());
 }
 
 TEST_CASE("bep3: messages stream to non-empty human-readable text") {
@@ -99,6 +115,20 @@ TEST_CASE("bep3: messages stream to non-empty human-readable text") {
     CHECK(s.find("BITFIELD held:2/3") != std::string::npos);
 }
 
+TEST_CASE("bep3: handshake's operator<< zero-pads each hex byte to two digits") {
+    // Regression test for the bug fixed in 0c2fefc: every streaming test
+    // above uses a default-constructed (all-zero) handshake, so a missing
+    // std::setw(2) would go undetected — 0x00 prints as "00" either way.
+    // A non-zero byte under 0x10 is the case that actually distinguishes
+    // "0a" (correct, zero-padded) from "a" (bug: single hex digit).
+    handshake h{};
+    h.info_hash[0] = 0x0a;
+    std::ostringstream os;
+    os << h;
+    const std::string s = os.str();
+    CHECK(s.find("info_hash:0a") != std::string::npos);
+}
+
 TEST_CASE("bep3: handshake's operator<< restores the caller's stream state") {
     // Regression test for the bug fixed in 1d8787c/0c2fefc: streaming a
     // handshake sets std::hex and a '0' fill internally to print
@@ -120,4 +150,18 @@ TEST_CASE("bep3: equality comparisons hold field-by-field") {
     CHECK_FALSE(request{1, 2, 3} == request{1, 2, 4});
     CHECK(bitfield{{true, false}} == bitfield{{true, false}});
     CHECK_FALSE(bitfield{{true, false}} == bitfield{{true, true}});
+}
+
+TEST_CASE("bep3: equality holds for handshake, keepalive, and the flag messages") {
+    handshake a{};
+    handshake b{};
+    CHECK(a == b);
+    b.info_hash[0] = 1;
+    CHECK_FALSE(a == b);
+
+    CHECK(keepalive{} == keepalive{});
+    CHECK(choke{} == choke{});
+    CHECK(unchoke{} == unchoke{});
+    CHECK(interested{} == interested{});
+    CHECK(not_interested{} == not_interested{});
 }
