@@ -3,14 +3,18 @@
  * Unit tests for peer_wire (BEP 3 per-connection FSM), driven directly
  * (no coordinator/socket), mirroring test_utp_socket.cpp's direct-call
  * style: build a message box, call external_transition/output/
- * internal_transition, inspect state. Covers stage-3's det-pass FSM
- * acceptance bar (fable_plan.md section 3, det pass point 2): illegal
- * transitions rejected, interest flags always consistent with bitfield/
- * have deltas.
+ * internal_transition, inspect state. Covers the deterministic-pass FSM
+ * acceptance bar: illegal transitions rejected, interest flags always
+ * consistent with bitfield/have deltas.
  */
 #include "../models/client/peer_wire.hpp"
 #include <catch2/catch_test_macros.hpp>
+#include <cstdint>
+#include <limits>
 #include <optional>
+#include <utility>
+#include <variant>
+#include <vector>
 
 using bt_utp::bep3_msg;
 using bt_utp::bitfield;
@@ -155,6 +159,39 @@ TEST_CASE("peer_wire: interest flag is recomputed from a have delta") {
     CHECK(drain_wire(pw).empty());
 }
 
+TEST_CASE("peer_wire: interest flag is recomputed after our own piece completion") {
+    // Regression test: our own have[] changing (via a completed download)
+    // is a have delta exactly like the peer's, and must re-trigger
+    // recompute_interest — otherwise am_interested stays stuck true even
+    // after we've acquired everything that made us interested.
+    pw_t pw(1, 1, 100, {false}, /*connect_to=*/7); // we have nothing yet
+    drain_wire(pw);
+    pw.external_transition(0.0, wire_in_box(7, wire_msg{handshake{}}));
+    drain_wire(pw);
+
+    pw.external_transition(0.0, wire_in_box(7, wire_msg{bep3_msg{bitfield{{true}}}}));
+    auto interested_sent = drain_wire(pw);
+    REQUIRE(interested_sent.size() == 1);
+    CHECK(std::holds_alternative<interested>(std::get<bep3_msg>(interested_sent[0].second)));
+
+    pw.external_transition(0.0, plan_box(7, {{0, 0}}));
+    CHECK(drain_wire(pw).empty()); // still choked by them: not requested yet
+    pw.external_transition(0.0, wire_in_box(7, wire_msg{bep3_msg{unchoke{}}}));
+    drain_wire(pw); // the request, now that they've unchoked us
+
+    pw.external_transition(0.0, wire_in_box(7, wire_msg{bep3_msg{piece{0, 0, 100}}}));
+    auto sent = drain_wire(pw);
+    // `have` (to the peer) and `not_interested` (nothing left to want).
+    bool saw_not_interested = false;
+    for (const auto &[dst, msg] : sent) {
+        if (std::holds_alternative<bep3_msg>(msg) &&
+            std::holds_alternative<not_interested>(std::get<bep3_msg>(msg))) {
+            saw_not_interested = true;
+        }
+    }
+    CHECK(saw_not_interested);
+}
+
 TEST_CASE("peer_wire: unchoke fills the request pipeline up to pipeline_depth") {
     pw_t pw(3, 4, 100, {false, false, false}, /*connect_to=*/7);
     drain_wire(pw);
@@ -278,5 +315,21 @@ TEST_CASE("peer_wire: an out-of-range sub-piece offset in a piece message is rej
     // begin=300 with sub_piece_bytes=100 -> sub_index=3, out of the
     // 2-sub-pieces-per-piece range configured above.
     pw.external_transition(0.0, wire_in_box(7, wire_msg{bep3_msg{piece{0, 300, 100}}}));
+    CHECK(drain_wire(pw).empty());
+}
+
+TEST_CASE("peer_wire: a piece message whose begin isn't a sub-piece boundary is rejected") {
+    pw_t pw(1, 2, 100, {false}, /*connect_to=*/7);
+    drain_wire(pw);
+    pw.external_transition(0.0, wire_in_box(7, wire_msg{handshake{}}));
+    drain_wire(pw);
+    pw.external_transition(0.0, plan_box(7, {{0, 0}}));
+    pw.external_transition(0.0, wire_in_box(7, wire_msg{bep3_msg{unchoke{}}}));
+    drain_wire(pw);
+
+    // begin=150 is in-range (150/100 == 1 < 2 sub-pieces) but not a
+    // multiple of sub_piece_bytes=100 — integer division would otherwise
+    // silently accept this as sub-piece 1 instead of rejecting it.
+    pw.external_transition(0.0, wire_in_box(7, wire_msg{bep3_msg{piece{0, 150, 100}}}));
     CHECK(drain_wire(pw).empty());
 }

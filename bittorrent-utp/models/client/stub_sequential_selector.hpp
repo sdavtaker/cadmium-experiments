@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /**
- * stub_sequential_selector: stage-3 PieceSelector placeholder — the
- * bead's "fixed/sequential pattern": plan the lowest-index piece the peer
+ * stub_sequential_selector: stage-3 PieceSelector placeholder — a
+ * "fixed/sequential pattern": plan the lowest-index piece the peer
  * has that we haven't already planned, sub-pieces in ascending order,
  * one piece at a time. Ports/coupling are the final stage-4 shape; only
  * this atomic's trivial strategy gets replaced by a real PieceSelector.
@@ -31,6 +31,10 @@
 #include <limits>
 #include <map>
 #include <ostream>
+#include <tuple>
+#include <utility>
+#include <variant>
+#include <vector>
 
 namespace bt_utp {
 

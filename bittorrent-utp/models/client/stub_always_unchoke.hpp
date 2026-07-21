@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /**
- * stub_always_unchoke: stage-3 ChokingPolicy placeholder. The bead's whole
+ * stub_always_unchoke: stage-3 ChokingPolicy placeholder. Its whole
  * behavior in one line: a peer telling us they're interested gets
  * unchoked, and nothing else — it never chokes anyone back. Ports and
  * coupling are the FINAL stage-4 shape (decision: "ports final now, only
@@ -16,6 +16,8 @@
 #include <deque>
 #include <limits>
 #include <ostream>
+#include <tuple>
+#include <variant>
 
 namespace bt_utp {
 

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: BSD-2-Clause
 /**
- * Structural test for bittorrent_client (stage 3, sub-bead bf7u): verifies
- * the coupled-model wiring (socket + peer_wire + stub policies)
- * instantiates through a real coordinator and schedules without crashing.
+ * Structural test for bittorrent_client: verifies the coupled-model wiring
+ * (socket + peer_wire + stub policies) instantiates through a real
+ * coordinator and schedules without crashing.
  *
  * This is intentionally not a behavioral end-to-end test: utp_socket needs
  * an actual peer on the other end of a channel to complete its own uTP
  * handshake before peer_wire's BEP 3 handshake can even be transmitted —
- * that requires two wired clients, which is p8q4's scope ("deterministic
- * two-client end-to-end exchange"), not this bead's ("coupled shape").
+ * that requires two wired clients, exercised by a later deterministic
+ * two-client end-to-end test, not this structural one.
  */
 #include <cadmium/engine/devs_coordinator.hpp>
 

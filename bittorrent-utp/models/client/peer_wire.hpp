@@ -53,6 +53,7 @@
 #include <stdexcept>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -406,6 +407,9 @@ namespace bt_utp {
                         c.peer_interested = false;
                         state.out_obs.push_back(obs_peer_interest{src, false});
                     } else if constexpr (std::is_same_v<T, have>) {
+                        if (alt.index >= total_pieces_) {
+                            return; // illegal: have for a piece outside the swarm
+                        }
                         if (alt.index >= c.peer_bitfield.size()) {
                             c.peer_bitfield.resize(alt.index + 1, false);
                         }
@@ -413,6 +417,9 @@ namespace bt_utp {
                         recompute_interest(src, c);
                         state.out_obs.push_back(obs_availability{src, c.peer_bitfield});
                     } else if constexpr (std::is_same_v<T, bitfield>) {
+                        if (alt.pieces.size() > total_pieces_) {
+                            return; // illegal: bitfield covers more pieces than the swarm has
+                        }
                         c.peer_bitfield = alt.pieces;
                         recompute_interest(src, c);
                         state.out_obs.push_back(obs_availability{src, c.peer_bitfield});
@@ -422,6 +429,9 @@ namespace bt_utp {
                         }
                         queue_to(src, wire_msg{bep3_msg{piece{alt.index, alt.begin, alt.length}}});
                     } else if constexpr (std::is_same_v<T, piece>) {
+                        if (alt.begin % sub_piece_bytes_ != 0) {
+                            return; // illegal: begin isn't a sub-piece boundary
+                        }
                         const std::uint32_t sub_index = alt.begin / sub_piece_bytes_;
                         if (sub_index >= sub_pieces_per_piece_) {
                             return; // illegal: out-of-range sub-piece offset
@@ -446,6 +456,15 @@ namespace bt_utp {
                             state.have[alt.index] = true;
                             c.in_progress.erase(alt.index);
                             queue_to(src, wire_msg{bep3_msg{have{alt.index}}});
+                            // Our own have[] just changed — a have/bitfield
+                            // delta either way, so interest toward this
+                            // peer must be recomputed the same as when
+                            // *their* availability changes (recompute_interest
+                            // is only ever called from the peer-availability
+                            // handlers otherwise, which would leave
+                            // am_interested stale after we finish acquiring
+                            // exactly what made us interested).
+                            recompute_interest(src, c);
                         }
                         state.out_obs.push_back(obs_completion{src, alt.index, piece_done});
                         fill_pipeline(src, c);
