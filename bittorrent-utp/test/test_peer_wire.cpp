@@ -7,6 +7,8 @@
  * acceptance bar: illegal transitions rejected, interest flags always
  * consistent with bitfield/have deltas.
  */
+#include <cadmium/modeling/message_box.hpp>
+
 #include "../models/client/peer_wire.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
