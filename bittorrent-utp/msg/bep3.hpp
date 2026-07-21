@@ -19,6 +19,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <iomanip>
 #include <ios>
 #include <ostream>
 #include <variant>
@@ -61,15 +62,17 @@ namespace bt_utp {
 
     inline std::ostream &operator<<(std::ostream &os, const handshake &h) {
         const std::ios::fmtflags saved = os.flags();
-        os << "HANDSHAKE info_hash:" << std::hex;
+        const char saved_fill          = os.fill();
+        os << "HANDSHAKE info_hash:" << std::hex << std::setfill('0');
         for (auto b : h.info_hash) {
-            os << static_cast<int>(b);
+            os << std::setw(2) << static_cast<int>(b);
         }
         os << " peer_id:";
         for (auto b : h.peer_id) {
-            os << static_cast<int>(b);
+            os << std::setw(2) << static_cast<int>(b);
         }
         os.flags(saved);
+        os.fill(saved_fill);
         return os;
     }
 
