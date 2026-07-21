@@ -10,6 +10,8 @@
 #include <cadmium/modeling/message_box.hpp>
 
 #include "../models/client/peer_wire.hpp"
+#include "../msg/bep3.hpp"
+#include "../msg/peer_id.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 #include <limits>
@@ -216,11 +218,8 @@ TEST_CASE("peer_wire: unchoke fills the request pipeline up to pipeline_depth") 
     pw.external_transition(0.0, wire_in_box(7, wire_msg{handshake{}}));
     drain_wire(pw);
 
-    std::vector<sub_piece_id> items;
-    for (std::uint32_t i = 0; i < 8; ++i) {
-        items.push_back({0, i % 4 == 0 ? 0u : i}); // just needs 8 distinct-enough ids
-    }
-    items = {{0, 0}, {0, 1}, {0, 2}, {0, 3}, {1, 0}, {1, 1}, {1, 2}, {1, 3}};
+    const std::vector<sub_piece_id> items = {{0, 0}, {0, 1}, {0, 2}, {0, 3},
+                                             {1, 0}, {1, 1}, {1, 2}, {1, 3}};
     pw.external_transition(0.0, plan_box(7, items));
     CHECK(drain_wire(pw).empty()); // still choked by them: nothing requested yet
 

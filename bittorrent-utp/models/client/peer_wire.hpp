@@ -429,6 +429,9 @@ namespace bt_utp {
                         }
                         queue_to(src, wire_msg{bep3_msg{piece{alt.index, alt.begin, alt.length}}});
                     } else if constexpr (std::is_same_v<T, piece>) {
+                        if (alt.index >= total_pieces_) {
+                            return; // illegal: piece for an index outside the swarm
+                        }
                         if (alt.begin % sub_piece_bytes_ != 0) {
                             return; // illegal: begin isn't a sub-piece boundary
                         }
