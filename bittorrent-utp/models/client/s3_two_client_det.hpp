@@ -16,6 +16,18 @@
  * therefore installs a captured-string spdlog sink before running and
  * returns the full NDJSON trace alongside the finish time, so both the
  * golden-value ctest and the scripted trace audit read the same record.
+ *
+ * That sink is filtered (event_filter_sink.hpp) down to
+ * s3_log_event_allowlist: measured on a full run, per-tick
+ * coordinator/simulator bookkeeping events (sim_state, sim_info_advance,
+ * coor_info_advance, coor_routing_*, sim_info_collect) outnumber
+ * sim_messages_collect — the event that actually carries every BEP3 wire
+ * exchange — roughly 15:1, and are why the unfiltered trace was 388MB
+ * instead of the 54MB this filtering brings it to (with cadmium::named<>
+ * applied; 826MB before that). None of the planned golden-value assertions
+ * (completion time, REQUEST/PIECE count symmetry, distinct HAVE count) need
+ * per-atomic state snapshots, only message traffic — a future test that
+ * does can extend the allowlist with "sim_state".
  */
 #pragma once
 
@@ -27,6 +39,7 @@
 
 #include "../utp/bottleneck_channel.hpp"
 #include "bittorrent_client.hpp"
+#include "event_filter_sink.hpp"
 #include "peer_wire.hpp"
 #include "stub_always_unchoke.hpp"
 #include "stub_sequential_selector.hpp"
@@ -134,14 +147,21 @@ namespace bt_utp {
         std::string ndjson_log{};
     };
 
+    // See the file-level comment for why sim_state and the coordinator/
+    // simulator bookkeeping events are excluded.
+    inline const std::vector<std::string> s3_log_event_allowlist = {
+        "sim_messages_collect", "run_global_time", "run_info", "sim_info_init", "coor_info_init"};
+
     /// Runs the stage-3 deterministic scenario to completion (or t_max,
-    /// whichever comes first), capturing the full NDJSON trace into a
-    /// string rather than stdout — this project's only way to verify what
-    /// happened inside a run that exposes no application-level port.
+    /// whichever comes first), capturing the NDJSON trace (filtered to
+    /// s3_log_event_allowlist) into a string rather than stdout — this
+    /// project's only way to verify what happened inside a run that exposes
+    /// no application-level port.
     inline s3_det_result run_s3_det(double t_max = 200.0) {
-        auto buffer = std::make_shared<std::ostringstream>();
-        auto sink   = std::make_shared<spdlog::sinks::ostream_sink_mt>(*buffer);
-        auto logger = std::make_shared<spdlog::logger>("s3_det", sink);
+        auto buffer   = std::make_shared<std::ostringstream>();
+        auto raw_sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(*buffer);
+        auto sink     = std::make_shared<event_filter_sink>(raw_sink, s3_log_event_allowlist);
+        auto logger   = std::make_shared<spdlog::logger>("s3_det", sink);
         logger->set_pattern("%v");
         logger->set_level(spdlog::level::debug);
         cadmium::log::set_logger(logger);
