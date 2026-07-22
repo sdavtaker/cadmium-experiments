@@ -3,7 +3,7 @@
     {
       "kind": "git",
       "repository": "https://github.com/sdavtaker/vcpkg-registry",
-      "baseline": "8b5c56fc19759120bd8939986e284e9f84489f4c",
+      "baseline": "948af0f80f1f7eca584d5d760065f4fd5c1f053b",
       "packages": [ "cadmium", "cdcommons" ]
     }
   ]
