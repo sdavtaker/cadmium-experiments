@@ -90,7 +90,14 @@ namespace bt_utp {
         using output_ports = std::tuple<typename defs::out>;
 
         void internal_transition(URNG &) {
+            // Same contract as bottleneck_channel: a coordinator only
+            // calls this while imminent, and aging by an infinite sigma
+            // would silently corrupt server_free_rem, so a genuinely
+            // passive call must fail loudly instead.
             const TIME sigma = time_advance();
+            if (sigma == std::numeric_limits<TIME>::infinity()) {
+                throw std::logic_error("lossy_channel::internal_transition called while passive");
+            }
             age(sigma);
             const auto it = imminent_it();
             if (it != state.pending.end()) {
@@ -140,6 +147,9 @@ namespace bt_utp {
         }
 
         typename cadmium::make_message_box<output_ports>::type output() const {
+            if (time_advance() == std::numeric_limits<TIME>::infinity()) {
+                throw std::logic_error("lossy_channel::output called while passive");
+            }
             typename cadmium::make_message_box<output_ports>::type box;
             const auto it = imminent_it();
             if (it != state.pending.end()) {

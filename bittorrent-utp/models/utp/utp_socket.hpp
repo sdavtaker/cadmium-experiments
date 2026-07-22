@@ -35,6 +35,7 @@
 #include <limits>
 #include <map>
 #include <ostream>
+#include <stdexcept>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -239,6 +240,18 @@ namespace bt_utp {
         }
 
         typename cadmium::make_message_box<output_ports>::type output() const {
+            // A coordinator only calls output() on an imminent model
+            // (time_advance() == 0). An empty box here is legitimate —
+            // this socket can be imminent purely due to a due retransmit
+            // timer with nothing queued to emit yet (the retransmission
+            // itself is queued inside internal_transition()'s timeout
+            // handling, which runs after output()) — but the model being
+            // genuinely passive (no queued frame/deliver *and* no armed,
+            // due timer) is a DEVS calling-contract violation, not
+            // something this atomic's own logic produces.
+            if (time_advance() == std::numeric_limits<TIME>::infinity()) {
+                throw std::logic_error("utp_socket::output called while passive");
+            }
             typename cadmium::make_message_box<output_ports>::type box;
             if (!state.out_frames.empty()) {
                 cadmium::get_message<typename defs::net_out>(box).emplace(state.out_frames.front());
@@ -251,7 +264,14 @@ namespace bt_utp {
         }
 
         void internal_transition() {
-            const TIME sigma   = time_advance();
+            // Same contract as output(): a coordinator only calls this
+            // while imminent. Advancing state.now by an infinite sigma
+            // would silently corrupt it if this were ever called while
+            // genuinely passive, so fail loudly instead.
+            const TIME sigma = time_advance();
+            if (sigma == std::numeric_limits<TIME>::infinity()) {
+                throw std::logic_error("utp_socket::internal_transition called while passive");
+            }
             state.now          = state.now + sigma;
             const bool emitted = !state.out_frames.empty() || !state.out_delivers.empty();
             if (!state.out_frames.empty()) {

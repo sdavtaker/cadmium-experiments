@@ -154,3 +154,11 @@ TEST_CASE("lossy channel: invalid construction parameters are rejected") {
     CHECK_THROWS_AS(channel_t(0.05, 1000.0, -0.1, 0.0, 0.1), std::invalid_argument);
     CHECK_THROWS_AS(channel_t(0.05, 1000.0, 0.1, 0.5, 0.1), std::invalid_argument);
 }
+
+TEST_CASE("lossy channel: output()/internal_transition() reject being called while passive") {
+    channel_t ch{0.05, 1000.0, 0.1, 0.0, 0.1}; // no arrivals yet: passive
+    RNG rng(1);
+    REQUIRE(ch.time_advance() == std::numeric_limits<double>::infinity());
+    CHECK_THROWS_AS(ch.output(), std::logic_error);
+    CHECK_THROWS_AS(ch.internal_transition(rng), std::logic_error);
+}

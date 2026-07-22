@@ -57,6 +57,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <stdexcept>
 #include <vector>
 
 namespace {
@@ -291,6 +292,13 @@ namespace {
     }
 
 } // namespace
+
+TEST_CASE("traffic_source: output()/internal_transition() reject being called while passive") {
+    traffic_source<double> src; // default-constructed: passive
+    REQUIRE(src.time_advance() == std::numeric_limits<double>::infinity());
+    CHECK_THROWS_AS(src.output(), std::logic_error);
+    CHECK_THROWS_AS(src.internal_transition(), std::logic_error);
+}
 
 TEST_CASE("deterministic pair: LEDBAT holds queuing delay near target under a bulk transfer") {
     utp_constants k{};

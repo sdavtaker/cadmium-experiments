@@ -15,6 +15,7 @@
 #include "sim_time.hpp"
 #include "utp_socket.hpp"
 #include <limits>
+#include <stdexcept>
 #include <tuple>
 
 namespace bt_utp {
@@ -40,6 +41,14 @@ namespace bt_utp {
         using output_ports = std::tuple<typename defs::out>;
 
         void internal_transition() {
+            // A coordinator only calls internal_transition() while
+            // imminent (time_advance() == 0, i.e. state == true); calling
+            // it while already passive is a DEVS calling-contract
+            // violation, not a state this atomic's own logic produces —
+            // fail loudly rather than silently re-affirming passivity.
+            if (!state) {
+                throw std::logic_error("traffic_source::internal_transition called while passive");
+            }
             state = false;
         }
         void external_transition(TIME, typename cadmium::make_message_box<input_ports>::type) {
@@ -47,10 +56,11 @@ namespace bt_utp {
             // defensively with an empty box.
         }
         typename cadmium::make_message_box<output_ports>::type output() const {
-            typename cadmium::make_message_box<output_ports>::type box;
-            if (state) {
-                cadmium::get_message<typename defs::out>(box).emplace(send_req{dst_, chunk_});
+            if (!state) {
+                throw std::logic_error("traffic_source::output called while passive");
             }
+            typename cadmium::make_message_box<output_ports>::type box;
+            cadmium::get_message<typename defs::out>(box).emplace(send_req{dst_, chunk_});
             return box;
         }
         TIME time_advance() const {

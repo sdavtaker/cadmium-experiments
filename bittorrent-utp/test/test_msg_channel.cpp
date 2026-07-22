@@ -139,6 +139,14 @@ TEST_CASE("bottleneck channel: invalid construction parameters are rejected") {
     CHECK_THROWS_AS(channel_t(-0.01, 1000.0), std::invalid_argument);
 }
 
+TEST_CASE("bottleneck channel: output()/internal_transition() reject being called while "
+          "passive") {
+    channel_t ch{0.05, 1000.0}; // no arrivals yet: passive
+    REQUIRE(ch.time_advance() == std::numeric_limits<double>::infinity());
+    CHECK_THROWS_AS(ch.output(), std::logic_error);
+    CHECK_THROWS_AS(ch.internal_transition(), std::logic_error);
+}
+
 TEST_CASE("bottleneck channel: state streams to log-friendly text") {
     channel_t ch{0.05, 1000.0};
     ch.external_transition(0.0, box_with(make_frame(1, 100)));
