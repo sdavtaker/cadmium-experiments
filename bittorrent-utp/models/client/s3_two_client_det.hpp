@@ -31,7 +31,6 @@
 #include "stub_always_unchoke.hpp"
 #include "stub_sequential_selector.hpp"
 #include <cstdint>
-#include <limits>
 #include <memory>
 #include <spdlog/sinks/ostream_sink.h>
 #include <spdlog/spdlog.h>
