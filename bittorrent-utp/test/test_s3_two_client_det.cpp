@@ -111,7 +111,12 @@ TEST_CASE("s3 det: golden-value assertions on the filtered NDJSON trace") {
     CHECK(finish_time >= lower_bound);
     CHECK(finish_time <= upper_bound);
 
-    // Every REQUEST is answered by exactly one PIECE.
+    // Every REQUEST is answered by exactly one PIECE. Each raw count here
+    // is double the true 640 (40 pieces * 16 sub-pieces) sub-piece
+    // exchanges, since every wire message is logged once at the sending
+    // peer_wire's wire_out and again at the receiving socket's app_deliver
+    // -- both REQUEST and PIECE double identically through that same
+    // mechanism, so the equality check below is unaffected either way.
     const auto num_requests = count_occurrences(log, "REQUEST idx:");
     const auto num_pieces   = count_occurrences(log, "PIECE idx:");
     CHECK(num_requests > 0);
