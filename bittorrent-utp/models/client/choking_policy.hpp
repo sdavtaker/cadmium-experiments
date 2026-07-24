@@ -130,17 +130,26 @@ namespace bt_utp {
         };
         state_type state{};
 
-        choking_policy(std::uint32_t total_pieces, double sub_piece_bytes) {
+        /// initial_complete: true for a client that's already a full seed
+        /// from construction (matching peer_wire's own initial_have
+        /// parameter) -- such a client never downloads anything, so it
+        /// would never otherwise observe enough obs_completion events to
+        /// ever learn have_complete_file should be true, leaving it
+        /// stuck ranking by (nonexistent) download-rate and computing
+        /// snub against every peer forever.
+        choking_policy(std::uint32_t total_pieces, double sub_piece_bytes,
+                       bool initial_complete = false) {
             if (total_pieces == 0) {
                 throw std::invalid_argument("choking_policy: total_pieces must be > 0");
             }
             if (!(sub_piece_bytes > 0.0)) {
                 throw std::invalid_argument("choking_policy: sub_piece_bytes must be > 0");
             }
-            state.total_pieces    = total_pieces;
-            state.sub_piece_bytes = sub_piece_bytes;
-            state.next_rechoke    = seconds_converter<TIME>::convert(rechoke_period_seconds);
-            state.next_optimistic = seconds_converter<TIME>::convert(optimistic_period_seconds);
+            state.total_pieces       = total_pieces;
+            state.sub_piece_bytes    = sub_piece_bytes;
+            state.have_complete_file = initial_complete;
+            state.next_rechoke       = seconds_converter<TIME>::convert(rechoke_period_seconds);
+            state.next_optimistic    = seconds_converter<TIME>::convert(optimistic_period_seconds);
         }
 
         using input_ports  = std::tuple<typename defs::obs_in>;
@@ -169,6 +178,14 @@ namespace bt_utp {
                             state.completed_pieces.insert(alt.piece_index);
                             if (state.completed_pieces.size() >= state.total_pieces) {
                                 state.have_complete_file = true;
+                                // Snub no longer applies once we're a
+                                // seed (see rechoke()) -- clear any stale
+                                // snub marks from just before completion
+                                // so they don't wrongly linger into the
+                                // upload-rate ranking.
+                                for (auto &kv : state.peers) {
+                                    kv.second.snubbed = false;
+                                }
                             }
                         }
                     } else if constexpr (std::is_same_v<T, obs_upload>) {
@@ -275,13 +292,22 @@ namespace bt_utp {
         }
 
         void rechoke() {
-            for (auto &[peer, p] : state.peers) {
-                if (p.interested && p.unchoked) {
-                    // set_unchoked() always sets unchoked_since when it
-                    // sets unchoked = true, so this dereference is safe
-                    // whenever we reach here.
-                    const TIME baseline = p.last_data.value_or(*p.unchoked_since);
-                    p.snubbed = cadmium::log::to_sim_double(state.now - baseline) >= snub_seconds;
+            // Snub is a download-reciprocity concept: it only makes sense
+            // while we're still ranking by download-rate. Once we're a
+            // seed (have_complete_file), we no longer expect *any* peer
+            // to send us data -- a leech legitimately never does, and
+            // computing snub here would eventually mark every one of
+            // them snubbed for no real reason.
+            if (!state.have_complete_file) {
+                for (auto &[peer, p] : state.peers) {
+                    if (p.interested && p.unchoked) {
+                        // set_unchoked() always sets unchoked_since when
+                        // it sets unchoked = true, so this dereference is
+                        // safe whenever we reach here.
+                        const TIME baseline = p.last_data.value_or(*p.unchoked_since);
+                        p.snubbed =
+                            cadmium::log::to_sim_double(state.now - baseline) >= snub_seconds;
+                    }
                 }
             }
 
