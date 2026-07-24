@@ -107,16 +107,24 @@ namespace bt_utp {
         }
     };
 
-    /// plan_in port message: sub-pieces to fetch next from one peer,
-    /// appended to peer_wire's own pending-request queue for that peer
-    /// (peer_wire fills its pipeline from this queue once unchoked).
+    /// plan_in port message: sub-pieces to fetch next from one peer
+    /// (appended to peer_wire's own pending-request queue for that peer;
+    /// peer_wire fills its pipeline from this queue once unchoked), and/or
+    /// sub-pieces to cancel from that peer -- piece_selector's endgame
+    /// mode requests every remaining sub-piece from every peer that has
+    /// it, and cancels the redundant copies once the first one arrives.
+    /// A cancellation still queued (not yet requested) is dropped
+    /// silently; one already outstanding gets an actual outgoing CANCEL
+    /// wire message (see handle_plan_in).
     struct request_plan {
         peer_id peer{};
         std::vector<sub_piece_id> items{};
+        std::vector<sub_piece_id> cancellations{};
 
         friend bool operator==(const request_plan &, const request_plan &) = default;
         friend std::ostream &operator<<(std::ostream &os, const request_plan &p) {
-            return os << "plan->" << p.peer << " [" << p.items.size() << " items]";
+            return os << "plan->" << p.peer << " [" << p.items.size() << " items, "
+                      << p.cancellations.size() << " cancels]";
         }
     };
 
@@ -143,6 +151,10 @@ namespace bt_utp {
         std::uint32_t piece_index{};
         bool full_piece{}; // true: whole piece done (a sub-piece completion always also has a value
                            // here)
+        std::uint32_t sub_piece_index{}; // which sub-piece this specific delivery completed --
+                                         // piece_selector's endgame mode needs this to know
+                                         // exactly what to cancel from the *other* peers it
+                                         // redundantly asked for the same sub-piece.
 
         friend bool operator==(const obs_completion &, const obs_completion &) = default;
     };
@@ -179,8 +191,8 @@ namespace bt_utp {
                 } else if constexpr (std::is_same_v<T, obs_rx_rate>) {
                     os << "OBS rx_rate peer:" << alt.peer << " Bps:" << alt.bytes_per_sec;
                 } else if constexpr (std::is_same_v<T, obs_completion>) {
-                    os << "OBS completion peer:" << alt.peer << " piece:" << alt.piece_index
-                       << (alt.full_piece ? " (full)" : " (sub)");
+                    os << "OBS completion peer:" << alt.peer << " piece:" << alt.piece_index << "."
+                       << alt.sub_piece_index << (alt.full_piece ? " (full)" : " (sub)");
                 } else if constexpr (std::is_same_v<T, obs_upload>) {
                     os << "OBS upload peer:" << alt.peer << " piece:" << alt.piece_index
                        << " bytes:" << alt.bytes;
@@ -505,7 +517,8 @@ namespace bt_utp {
                                 recompute_interest(peer, conn_ref);
                             }
                         }
-                        state.out_obs.push_back(obs_completion{src, alt.index, piece_done});
+                        state.out_obs.push_back(
+                            obs_completion{src, alt.index, piece_done, sub_index});
                         fill_pipeline(src, c);
                     } else if constexpr (std::is_same_v<T, cancel>) {
                         // A real client's cancel retracts a request the
@@ -541,6 +554,24 @@ namespace bt_utp {
                 return;
             }
             conn &c = it->second;
+            for (const auto &sp : plan.cancellations) {
+                if (auto planned_it = std::find(c.planned.begin(), c.planned.end(), sp);
+                    planned_it != c.planned.end()) {
+                    // Never sent yet: drop it silently, nothing to cancel
+                    // on the wire.
+                    c.planned.erase(planned_it);
+                    continue;
+                }
+                if (auto outstanding_it = std::find(c.outstanding.begin(), c.outstanding.end(), sp);
+                    outstanding_it != c.outstanding.end()) {
+                    c.outstanding.erase(outstanding_it);
+                    queue_to(plan.peer, wire_msg{bep3_msg{cancel{
+                                            sp.piece_index, sp.sub_piece_index * sub_piece_bytes_,
+                                            sub_piece_bytes_}}});
+                }
+                // Neither planned nor outstanding: already delivered or
+                // never asked of this peer -- nothing to do.
+            }
             for (const auto &sp : plan.items) {
                 c.planned.push_back(sp);
             }
