@@ -146,14 +146,27 @@ namespace bt_utp {
 
         friend bool operator==(const obs_completion &, const obs_completion &) = default;
     };
+    /// Emitted whenever we serve one of *their* requests (the upload
+    /// direction) — obs_completion above is download-only (data *we*
+    /// received). ChokingPolicy needs both: it ranks peers by download
+    /// rate while we're still downloading ourselves, then switches to
+    /// upload rate once have_complete_file (BEP 3's seed behavior), and
+    /// there is no other signal in this interface for the latter.
+    struct obs_upload {
+        peer_id peer{};
+        std::uint32_t piece_index{};
+        std::uint32_t bytes{};
+
+        friend bool operator==(const obs_upload &, const obs_upload &) = default;
+    };
     struct obs_snub {
         peer_id peer{};
 
         friend bool operator==(const obs_snub &, const obs_snub &) = default;
     };
 
-    using peer_wire_obs =
-        std::variant<obs_peer_interest, obs_availability, obs_rx_rate, obs_completion, obs_snub>;
+    using peer_wire_obs = std::variant<obs_peer_interest, obs_availability, obs_rx_rate,
+                                       obs_completion, obs_upload, obs_snub>;
 
     inline std::ostream &operator<<(std::ostream &os, const peer_wire_obs &o) {
         std::visit(
@@ -168,6 +181,9 @@ namespace bt_utp {
                 } else if constexpr (std::is_same_v<T, obs_completion>) {
                     os << "OBS completion peer:" << alt.peer << " piece:" << alt.piece_index
                        << (alt.full_piece ? " (full)" : " (sub)");
+                } else if constexpr (std::is_same_v<T, obs_upload>) {
+                    os << "OBS upload peer:" << alt.peer << " piece:" << alt.piece_index
+                       << " bytes:" << alt.bytes;
                 } else {
                     os << "OBS snub peer:" << alt.peer;
                 }
@@ -443,6 +459,7 @@ namespace bt_utp {
                             return; // illegal: choking, or they asked for a piece we lack
                         }
                         queue_to(src, wire_msg{bep3_msg{piece{alt.index, alt.begin, alt.length}}});
+                        state.out_obs.push_back(obs_upload{src, alt.index, alt.length});
                     } else if constexpr (std::is_same_v<T, piece>) {
                         if (alt.index >= total_pieces_) {
                             return; // illegal: piece for an index outside the swarm

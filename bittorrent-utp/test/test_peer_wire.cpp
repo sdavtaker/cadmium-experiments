@@ -76,6 +76,21 @@ namespace {
         return out;
     }
 
+    /// Same draining pattern as drain_wire, collecting obs_out instead —
+    /// both queues advance in lockstep per output()/internal_transition()
+    /// call regardless of which one this collects from.
+    std::vector<bt_utp::peer_wire_obs> drain_obs(pw_t &pw) {
+        std::vector<bt_utp::peer_wire_obs> out;
+        while (pw.time_advance() == 0.0) {
+            auto box = pw.output();
+            if (const auto &m = cadmium::get_message<defs::obs_out>(box); m.has_value()) {
+                out.push_back(*m);
+            }
+            pw.internal_transition();
+        }
+        return out;
+    }
+
 } // namespace
 
 TEST_CASE("peer_wire: output()/internal_transition() reject being called while passive") {
@@ -270,6 +285,7 @@ TEST_CASE("peer_wire: a request is ignored while we are choking the peer") {
     // Default am_choking == true: the request must be ignored.
     pw.external_transition(0.0, wire_in_box(7, wire_msg{bep3_msg{request{0, 0, 100}}}));
     CHECK(drain_wire(pw).empty());
+    CHECK(drain_obs(pw).empty()); // no obs_upload for a request we didn't serve
 }
 
 TEST_CASE("peer_wire: a request for a piece we don't have is ignored, even unchoked") {
@@ -281,6 +297,7 @@ TEST_CASE("peer_wire: a request for a piece we don't have is ignored, even uncho
 
     pw.external_transition(0.0, wire_in_box(7, wire_msg{bep3_msg{request{0, 0, 100}}}));
     CHECK(drain_wire(pw).empty()); // illegal: we don't have piece 0
+    CHECK(drain_obs(pw).empty());  // no obs_upload for a request we didn't serve
 }
 
 TEST_CASE("peer_wire: a valid request is served with a piece reply") {
@@ -297,6 +314,23 @@ TEST_CASE("peer_wire: a valid request is served with a piece reply") {
     const auto &p = std::get<piece>(std::get<bep3_msg>(sent[0].second));
     CHECK(p.index == 0);
     CHECK(p.begin == 0);
+}
+
+TEST_CASE("peer_wire: serving a request emits obs_upload with the served byte count") {
+    pw_t pw(1, 1, 100, {true}); // we have the only piece
+    pw.external_transition(0.0, wire_in_box(7, wire_msg{handshake{}}));
+    drain_wire(pw);
+    pw.external_transition(0.0, choke_cmd_box(7, /*unchoke=*/true));
+    drain_wire(pw);
+
+    pw.external_transition(0.0, wire_in_box(7, wire_msg{bep3_msg{request{0, 0, 100}}}));
+    auto obs = drain_obs(pw);
+    REQUIRE(obs.size() == 1);
+    const auto *upload = std::get_if<bt_utp::obs_upload>(&obs[0]);
+    REQUIRE(upload != nullptr);
+    CHECK(upload->peer == 7);
+    CHECK(upload->piece_index == 0);
+    CHECK(upload->bytes == 100);
 }
 
 TEST_CASE("peer_wire: sub-piece completion assembles into a full piece and emits have") {
