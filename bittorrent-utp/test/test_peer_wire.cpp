@@ -12,6 +12,7 @@
 #include "../models/client/peer_wire.hpp"
 #include "../msg/bep3.hpp"
 #include "../msg/peer_id.hpp"
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 #include <limits>
@@ -58,6 +59,13 @@ namespace {
     box_in plan_box(bt_utp::peer_id peer, std::vector<sub_piece_id> items) {
         box_in box;
         cadmium::get_message<defs::plan_in>(box).emplace(request_plan{peer, std::move(items)});
+        return box;
+    }
+    box_in plan_box_full(bt_utp::peer_id peer, std::vector<sub_piece_id> items,
+                         std::vector<sub_piece_id> cancellations) {
+        box_in box;
+        cadmium::get_message<defs::plan_in>(box).emplace(
+            request_plan{peer, std::move(items), std::move(cancellations)});
         return box;
     }
 
@@ -403,5 +411,64 @@ TEST_CASE("peer_wire: a piece message whose begin isn't a sub-piece boundary is 
     // without the alignment check, integer division would accept this as
     // sub-piece 1, complete the piece, and emit `have`.
     pw.external_transition(0.0, wire_in_box(7, wire_msg{bep3_msg{piece{0, 150, 100}}}));
+    CHECK(drain_wire(pw).empty());
+}
+
+TEST_CASE("peer_wire: cancelling a merely-planned (not yet requested) sub-piece is silent") {
+    // Pipeline depth is 5 (peer_wire.hpp); plan 6 so the 6th sits in
+    // `planned`, never sent, and can be cancelled before it ever goes out.
+    pw_t pw(1, 6, 100, {false}, /*connect_to=*/7);
+    drain_wire(pw);
+    pw.external_transition(0.0, wire_in_box(7, wire_msg{handshake{}}));
+    drain_wire(pw);
+    pw.external_transition(0.0, plan_box(7, {{0, 0}, {0, 1}, {0, 2}, {0, 3}, {0, 4}, {0, 5}}));
+    pw.external_transition(0.0, wire_in_box(7, wire_msg{bep3_msg{unchoke{}}}));
+    REQUIRE(drain_wire(pw).size() == 5); // pipeline_depth caps outstanding at 5
+
+    // Cancel sub-piece 5 (still only planned, never requested): no CANCEL
+    // wire message, and it never gets requested even once a slot frees up.
+    pw.external_transition(0.0, plan_box_full(7, {}, {{0, 5}}));
+    CHECK(drain_wire(pw).empty());
+
+    pw.external_transition(0.0, wire_in_box(7, wire_msg{bep3_msg{piece{0, 0, 100}}}));
+    auto after_delivery = drain_wire(pw);
+    CHECK(std::find_if(after_delivery.begin(), after_delivery.end(), [](const auto &m) {
+              return std::holds_alternative<bep3_msg>(m.second) &&
+                     std::holds_alternative<request>(std::get<bep3_msg>(m.second));
+          }) == after_delivery.end());
+}
+
+TEST_CASE("peer_wire: cancelling an outstanding sub-piece sends CANCEL and drops it") {
+    pw_t pw(1, 2, 100, {false}, /*connect_to=*/7);
+    drain_wire(pw);
+    pw.external_transition(0.0, wire_in_box(7, wire_msg{handshake{}}));
+    drain_wire(pw);
+    pw.external_transition(0.0, plan_box(7, {{0, 0}, {0, 1}}));
+    pw.external_transition(0.0, wire_in_box(7, wire_msg{bep3_msg{unchoke{}}}));
+    REQUIRE(drain_wire(pw).size() == 2); // both sub-pieces requested, both outstanding
+
+    pw.external_transition(0.0, plan_box_full(7, {}, {{0, 1}}));
+    auto sent = drain_wire(pw);
+    REQUIRE(sent.size() == 1);
+    REQUIRE(std::holds_alternative<bep3_msg>(sent[0].second));
+    const auto &c = std::get<cancel>(std::get<bep3_msg>(sent[0].second));
+    CHECK(c.index == 0);
+    CHECK(c.begin == 100); // sub-piece 1 * sub_piece_bytes 100
+
+    // The cancelled sub-piece must no longer be outstanding: a `piece`
+    // reply for it now is unsolicited and rejected.
+    pw.external_transition(0.0, wire_in_box(7, wire_msg{bep3_msg{piece{0, 100, 100}}}));
+    CHECK(drain_wire(pw).empty());
+}
+
+TEST_CASE("peer_wire: cancelling a sub-piece that's neither planned nor outstanding is a no-op") {
+    pw_t pw(1, 1, 100, {false}, /*connect_to=*/7);
+    drain_wire(pw);
+    pw.external_transition(0.0, wire_in_box(7, wire_msg{handshake{}}));
+    drain_wire(pw);
+
+    // Never planned this sub-piece at all -- cancelling it must not
+    // crash or emit anything.
+    pw.external_transition(0.0, plan_box_full(7, {}, {{0, 0}}));
     CHECK(drain_wire(pw).empty());
 }
