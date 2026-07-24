@@ -8,7 +8,8 @@ add_executable(bt-utp-tests test/test_msg_channel.cpp test/test_utp_socket.cpp
                             test/test_pair_validation.cpp test/test_lossy_channel.cpp
                             test/test_two_client_sto.cpp test/test_bep3.cpp
                             test/test_peer_wire.cpp test/test_bittorrent_client.cpp
-                            test/test_s3_two_client_det.cpp test/test_event_filter_sink.cpp)
+                            test/test_s3_two_client_det.cpp test/test_event_filter_sink.cpp
+                            test/test_choking_policy.cpp)
 target_include_directories(bt-utp-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_options(bt-utp-tests PRIVATE -Wall -Wextra -pedantic)
 target_link_libraries(bt-utp-tests PRIVATE cadmium::cadmium cdcommons::cdcommons Catch2::Catch2WithMain)
