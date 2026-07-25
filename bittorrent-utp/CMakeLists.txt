@@ -10,7 +10,7 @@ add_executable(bt-utp-tests test/test_msg_channel.cpp test/test_utp_socket.cpp
                             test/test_peer_wire.cpp test/test_bittorrent_client.cpp
                             test/test_s3_two_client_det.cpp test/test_event_filter_sink.cpp
                             test/test_choking_policy.cpp test/test_piece_selector.cpp
-                            test/test_s4_two_client_det.cpp)
+                            test/test_s4_two_client_det.cpp test/test_s4_anti_snub_det.cpp)
 target_include_directories(bt-utp-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_options(bt-utp-tests PRIVATE -Wall -Wextra -pedantic)
 target_link_libraries(bt-utp-tests PRIVATE cadmium::cadmium cdcommons::cdcommons Catch2::Catch2WithMain)
@@ -30,3 +30,8 @@ add_executable(bt-utp-s4-det main_s4_det.cpp)
 target_include_directories(bt-utp-s4-det PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_options(bt-utp-s4-det PRIVATE -Wall -Wextra -pedantic)
 target_link_libraries(bt-utp-s4-det PRIVATE cadmium::cadmium cdcommons::cdcommons)
+
+add_executable(bt-utp-s4-anti-snub-det main_s4_anti_snub_det.cpp)
+target_include_directories(bt-utp-s4-anti-snub-det PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_options(bt-utp-s4-anti-snub-det PRIVATE -Wall -Wextra -pedantic)
+target_link_libraries(bt-utp-s4-anti-snub-det PRIVATE cadmium::cadmium cdcommons::cdcommons)
