@@ -92,6 +92,25 @@ TEST_CASE("choking_policy: constructs and validates its geometry parameters") {
     CHECK_THROWS_AS(cp_t(1, 0.0), std::invalid_argument);
 }
 
+TEST_CASE("choking_policy: initial_complete starts a full seed already ranking by upload-rate, "
+          "never computing snub against a peer that legitimately never sends anything") {
+    cp_t cp(1, 100.0, /*initial_complete=*/true);
+    CHECK(cp.state.have_complete_file); // true from construction, not from an observed completion
+
+    // A full seed never downloads anything, so it would otherwise never
+    // observe enough obs_completion events to ever learn this itself.
+    cp.external_transition(0.0, interest_box(7, true));
+    advance_to_next_timer(cp); // rechoke @10s: peer 7 unchoked
+    REQUIRE(cp.state.peers.at(7).unchoked);
+
+    // 6 more rechokes (60s), peer 7 never uploads anything at all: must
+    // never be marked snubbed for it.
+    for (int i = 0; i < 6; ++i) {
+        advance_to_next_timer(cp);
+    }
+    CHECK_FALSE(cp.state.peers.at(7).snubbed);
+}
+
 TEST_CASE("choking_policy: rate ranking unchokes only the top 4 by rolling rx-rate") {
     cp_t cp(1, 100.0);
     // Five interested peers, fed distinct one-shot download rates: peer 5
@@ -157,6 +176,57 @@ TEST_CASE("choking_policy: ranking metric switches to upload-rate once our downl
     cp.external_transition(0.0, upload_box(7, 0, 500));
     REQUIRE(cp.state.peers.at(7).rate_samples.size() == 2);
     CHECK(cp.state.peers.at(7).rate_samples.back().second == 500.0);
+}
+
+TEST_CASE("choking_policy: once a seed, a peer that never uploads is never marked snubbed") {
+    cp_t cp(1, 100.0); // total_pieces = 1: the first completion flips have_complete_file
+    cp.external_transition(0.0, interest_box(7, true));
+    advance_to_next_timer(cp); // rechoke @10s: peer 7 unchoked
+    REQUIRE(cp.state.peers.at(7).unchoked);
+
+    // Complete our only piece -- have_complete_file flips true.
+    cp.external_transition(0.0, completion_box(7, 0, /*full_piece=*/true));
+    REQUIRE(cp.state.have_complete_file);
+
+    // 6 more rechokes (60s) with no upload from peer 7 at all: snub is a
+    // download-reciprocity concept and must not apply once we're a seed
+    // (a leech legitimately never sends us anything back).
+    for (int i = 0; i < 6; ++i) {
+        advance_to_next_timer(cp);
+    }
+    CHECK_FALSE(cp.state.peers.at(7).snubbed);
+}
+
+TEST_CASE("choking_policy: completing clears a stale snub mark set just before completion") {
+    cp_t cp(2, 100.0); // total_pieces = 2: needs contributions from peer 7 to flip
+    cp.external_transition(0.0, interest_box(7, true));
+    cp.external_transition(0.0, interest_box(8, true));
+    advance_to_next_timer(cp); // rechoke @10s: both unchoked (rate_slots=4 covers both)
+    REQUIRE(cp.state.peers.at(7).unchoked);
+    REQUIRE(cp.state.peers.at(8).unchoked);
+
+    // 6 rechokes (60s) with no data from either peer: both become snubbed.
+    for (int i = 0; i < 6; ++i) {
+        advance_to_next_timer(cp);
+    }
+    REQUIRE(cp.state.peers.at(7).snubbed);
+    REQUIRE(cp.state.peers.at(8).snubbed);
+
+    // Peer 7 delivers piece 0 (1 of 2 needed): not yet complete, so peer
+    // 7's own snub clears (the existing per-event reset) but peer 8's
+    // must NOT, since have_complete_file hasn't flipped yet.
+    cp.external_transition(0.0, completion_box(7, 0, /*full_piece=*/true));
+    CHECK_FALSE(cp.state.have_complete_file);
+    CHECK_FALSE(cp.state.peers.at(7).snubbed);
+    CHECK(cp.state.peers.at(8).snubbed);
+
+    // Peer 7 delivers piece 1 too: *now* have_complete_file flips, and
+    // peer 8's stale snub mark -- set before we ever became a seed --
+    // must be cleared by the global reset, even though this completion
+    // came from peer 7, not peer 8.
+    cp.external_transition(0.0, completion_box(7, 1, /*full_piece=*/true));
+    REQUIRE(cp.state.have_complete_file);
+    CHECK_FALSE(cp.state.peers.at(8).snubbed);
 }
 
 TEST_CASE("choking_policy: the optimistic slot rotates round-robin, newcomers first") {
