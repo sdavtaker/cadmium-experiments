@@ -40,14 +40,21 @@ Full per-run detail: [`s3-fixed-pattern_results.json`](s3-fixed-pattern_results.
 
 ## Reading the numbers
 
-**Propagation time** (sim-time from t=0 content availability at the seed to
-the receiver's last piece-completion event) is **3.5349s higher** under the
-real policy. This is a decision-timer effect, not a protocol-efficiency
-regression: `choking_policy`'s first rechoke tick fires 10s after
-construction, briefly delaying clientA's first unchoke of clientB relative
-to stage-3's stub (which unchokes unconditionally from t=0). Once unchoked,
-the transfer proceeds identically — every other metric in the table matches
-exactly.
+**Propagation time** is **3.5349s higher** under the real policy overall,
+but that net number hides two effects pulling in opposite directions. The
+delivery-rate series ([`s3-fixed-pattern_rate.svg`](s3-fixed-pattern_rate.svg)
+vs [`s4-policy_rate.svg`](s4-policy_rate.svg)) shows stage-3 starts
+delivering at ~t=1s (`stub_always_unchoke` unchokes unconditionally from
+t=0) while stage-4 doesn't start until ~t=11s — `choking_policy`'s first
+rechoke tick fires 10s after construction, gating clientA's first unchoke
+of clientB. That's a ~10s later start, yet stage-4 only ends up ~3.5s
+behind overall: its active transfer phase (once unchoked) is itself
+*faster* than stage-3's stub-driven one, clawing back roughly 6.5s of that
+later start. Real `piece_selector` evidently pipelines requests more
+effectively than `stub_sequential_selector` once both sides are unchoked —
+this experiment doesn't isolate exactly how much of the 6.5s comes from
+selection order versus other request/response timing, only that the net
+effect is real and reproducible.
 
 **Message counts are byte-for-byte identical** between the two runs. Neither
 client is ever actually choked in this simple seed/leech topology (both
@@ -63,7 +70,12 @@ change the wire-level exchange in a topology where nothing ever gets choked.
 `test/test_s5_det_comparison.cpp` pins this comparison as a ctest: asserts
 the stage-4/stage-3 overhead is bounded (`0 <= overhead <= 20s`, a generous
 ceiling above the measured ~3.5s that still catches a genuine slowdown) and
-that REQUEST/PIECE/HAVE counts match exactly between the two builds. Neither
+that REQUEST/PIECE/HAVE counts match exactly between the two builds. Both
+sides use the same completion metric (sim_time of the receiver's Nth
+distinct HAVE) so the delta is apples-to-apples — deliberately not
+`test_s3_two_client_det.cpp`'s own "largest sim_time anywhere in the trace"
+measure, which includes a real ~0.1s post-completion settling tail that
+would otherwise bias a cross-stage comparison. Neither
 `test_s3_two_client_det.cpp` nor `test_s4_two_client_det.cpp` checks the
 *relationship* between the two stages on its own — each only pins its own
 stage's completion time individually.

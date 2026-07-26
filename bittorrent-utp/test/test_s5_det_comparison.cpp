@@ -36,28 +36,20 @@ namespace {
         return count;
     }
 
-    // s3 fully passivates once done (see test_s3_two_client_det.cpp), so the
-    // largest sim_time in its trace is its completion time.
-    double max_sim_time(const std::string &log) {
-        constexpr std::string_view key = R"("sim_time":)";
-        double result                  = 0.0;
-        std::size_t pos                = 0;
-        while ((pos = log.find(key, pos)) != std::string_view::npos) {
-            pos += key.size();
-            std::size_t end = log.find_first_of(",}", pos);
-            result          = std::max(result, std::stod(log.substr(pos, end - pos)));
-            pos             = end;
-        }
-        return result;
-    }
-
-    // s4 never passivates (choking_policy's eternal timers), so completion
-    // is the sim_time of the receiver's Nth distinct HAVE announcement (see
-    // test_s4_two_client_det.cpp's track_have_progress for the same logic).
-    double s4_completion_time(const std::string &log, std::string_view model_prefix,
-                              std::size_t target_count) {
+    // Completion time is the sim_time of the receiver's Nth distinct HAVE
+    // announcement (see test_s4_two_client_det.cpp's track_have_progress for
+    // the same logic) -- used for *both* s3 and s4 here so the comparison is
+    // apples-to-apples. s3's own golden test (test_s3_two_client_det.cpp)
+    // instead uses "largest sim_time anywhere in the trace" as its
+    // completion signal, since s3 fully passivates and that file only needs
+    // its own single-stage number; that measure includes a real ~0.1s
+    // post-completion settling tail (final ACK/state-print activity) that
+    // would bias a *cross-stage* delta, so it is deliberately not reused
+    // here.
+    double completion_time(const std::string &log, std::string_view model_prefix,
+                           std::size_t target_count) {
         std::set<int> indices;
-        double completion_time = -1.0;
+        double result = -1.0;
         std::istringstream lines(log);
         std::string line;
         while (std::getline(lines, line)) {
@@ -83,11 +75,11 @@ namespace {
                 indices.insert(std::stoi(line.substr(pos, end - pos)));
                 pos = end;
             }
-            if (completion_time < 0.0 && indices.size() >= target_count && line_sim_time >= 0.0) {
-                completion_time = line_sim_time;
+            if (result < 0.0 && indices.size() >= target_count && line_sim_time >= 0.0) {
+                result = line_sim_time;
             }
         }
-        return completion_time;
+        return result;
     }
 
 } // namespace
@@ -105,17 +97,25 @@ TEST_CASE("s5 det comparison: real policy adds bounded overhead over the stub ba
     REQUIRE(s3.finish == std::numeric_limits<double>::infinity());
     REQUIRE(s4.finish == 100.0); // s4's own default t_max; never passivates
 
-    const double s3_completion = max_sim_time(s3.ndjson_log);
+    const double s3_completion =
+        completion_time(s3.ndjson_log, "client_b.wire [", bt_utp::s3_total_pieces);
     const double s4_completion =
-        s4_completion_time(s4.ndjson_log, "client_b.wire [", bt_utp::s4_total_pieces);
+        completion_time(s4.ndjson_log, "client_b.wire [", bt_utp::s4_total_pieces);
+    REQUIRE(s3_completion >= 0.0);
     REQUIRE(s4_completion >= 0.0);
 
     // Empirically measured (2026-07-26, this Pi): s3 ~47.44s, s4 ~50.98s --
-    // a ~3.5s overhead from choking_policy's initial 10s rechoke tick
-    // delaying the first unchoke. Real policy can only be slower (it adds
-    // decision-timer delay, never bulk-transfer speedup) but a regression
-    // that made it dramatically slower would be a real bug, not "policy
-    // working as intended" -- 20s is a generous ceiling above the ~3.5s
+    // a ~3.5s overhead overall. This is *not* simply "the policy adds a
+    // fixed decision-timer delay": the rate series shows s4's transfer
+    // doesn't start delivering until ~t=11s (choking_policy's initial 10s
+    // rechoke tick gating the first unchoke) versus s3's ~t=1s, a ~10s
+    // later start -- yet s4 only ends up ~3.5s behind overall, meaning its
+    // active transfer phase is itself faster than s3's stub-driven one
+    // (real piece_selector vs. stub_sequential_selector), clawing back
+    // roughly 6.5s of that later start. The net overhead could shrink,
+    // grow, or in principle invert if either effect's magnitude changes;
+    // this is a regression pin on the *current* net result, not a claimed
+    // physical lower bound -- 20s is a generous ceiling above the ~3.5s
     // baseline that still catches a genuine multi-x slowdown.
     const double overhead = s4_completion - s3_completion;
     CHECK(overhead >= 0.0);
