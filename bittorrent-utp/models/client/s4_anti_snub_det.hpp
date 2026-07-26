@@ -187,11 +187,18 @@ namespace bt_utp {
     // expected unchoke (~t=10) and snub-triggered choke (~t=70) of
     // clientB, without waiting for the (deliberately, hugely delayed)
     // first sub-piece to actually arrive over chan_ba.
-    inline s4as_det_result run_s4as_det(double t_max = 100.0) {
-        auto buffer   = std::make_shared<std::ostringstream>();
-        auto raw_sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(*buffer);
-        auto sink     = std::make_shared<event_filter_sink>(raw_sink, s4as_log_event_allowlist);
-        auto logger   = std::make_shared<spdlog::logger>("s4as_det", sink);
+    // include_state defaults to false (see s3_two_client_det.hpp's own
+    // run_s3_det doc comment for why); the experiment harness passes true to
+    // get socket cwnd data via sim_state.
+    inline s4as_det_result run_s4as_det(double t_max = 100.0, bool include_state = false) {
+        auto buffer    = std::make_shared<std::ostringstream>();
+        auto raw_sink  = std::make_shared<spdlog::sinks::ostream_sink_mt>(*buffer);
+        auto allowlist = s4as_log_event_allowlist;
+        if (include_state) {
+            allowlist.push_back("sim_state");
+        }
+        auto sink   = std::make_shared<event_filter_sink>(raw_sink, allowlist);
+        auto logger = std::make_shared<spdlog::logger>("s4as_det", sink);
         logger->set_pattern("%v");
         logger->set_level(spdlog::level::debug);
         cadmium::log::set_logger(logger);

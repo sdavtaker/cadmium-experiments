@@ -154,14 +154,22 @@ namespace bt_utp {
 
     /// Runs the stage-3 deterministic scenario to completion (or t_max,
     /// whichever comes first), capturing the NDJSON trace (filtered to
-    /// s3_log_event_allowlist) into a string rather than stdout — this
-    /// project's only way to verify what happened inside a run that exposes
-    /// no application-level port.
-    inline s3_det_result run_s3_det(double t_max = 200.0) {
-        auto buffer   = std::make_shared<std::ostringstream>();
-        auto raw_sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(*buffer);
-        auto sink     = std::make_shared<event_filter_sink>(raw_sink, s3_log_event_allowlist);
-        auto logger   = std::make_shared<spdlog::logger>("s3_det", sink);
+    /// s3_log_event_allowlist, plus "sim_state" when include_state is set)
+    /// into a string rather than stdout — this project's only way to verify
+    /// what happened inside a run that exposes no application-level port.
+    /// include_state defaults to false: per the file-level comment, sim_state
+    /// outnumbers sim_messages_collect ~15:1, so it stays opt-in for callers
+    /// (e.g. the experiment harness reading socket cwnd) rather than paid by
+    /// every ctest invocation.
+    inline s3_det_result run_s3_det(double t_max = 200.0, bool include_state = false) {
+        auto buffer    = std::make_shared<std::ostringstream>();
+        auto raw_sink  = std::make_shared<spdlog::sinks::ostream_sink_mt>(*buffer);
+        auto allowlist = s3_log_event_allowlist;
+        if (include_state) {
+            allowlist.push_back("sim_state");
+        }
+        auto sink   = std::make_shared<event_filter_sink>(raw_sink, allowlist);
+        auto logger = std::make_shared<spdlog::logger>("s3_det", sink);
         logger->set_pattern("%v");
         logger->set_level(spdlog::level::debug);
         cadmium::log::set_logger(logger);
