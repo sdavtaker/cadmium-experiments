@@ -31,6 +31,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from xml.sax.saxutils import escape as xml_escape
 
 # Exact wire-format text each BEP3 message's operator<< produces (bep3.hpp),
 # scoped where needed to avoid a false match against a related message —
@@ -170,7 +171,7 @@ def write_svg_lines(path: Path, series: dict[str, list[tuple[float, float]]], ti
     if not all_points:
         path.write_text(
             f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">'
-            f'<text x="20" y="30">{title}: no data</text></svg>'
+            f'<text x="20" y="30">{xml_escape(title)}: no data</text></svg>'
         )
         return
 
@@ -192,15 +193,16 @@ def write_svg_lines(path: Path, series: dict[str, list[tuple[float, float]]], ti
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
         f'font-family="sans-serif" font-size="12">',
         f'<rect width="{width}" height="{height}" fill="white"/>',
-        f'<text x="{width / 2}" y="20" text-anchor="middle" font-size="14">{title}</text>',
+        f'<text x="{width / 2}" y="20" text-anchor="middle" font-size="14">'
+        f'{xml_escape(title)}</text>',
         f'<line x1="{margin["left"]}" y1="{margin["top"]}" x2="{margin["left"]}" '
         f'y2="{margin["top"] + plot_h}" stroke="black"/>',
         f'<line x1="{margin["left"]}" y1="{margin["top"] + plot_h}" '
         f'x2="{margin["left"] + plot_w}" y2="{margin["top"] + plot_h}" stroke="black"/>',
         f'<text x="{margin["left"] + plot_w / 2}" y="{height - 15}" text-anchor="middle">'
-        f'{x_label}</text>',
+        f'{xml_escape(x_label)}</text>',
         f'<text x="15" y="{margin["top"] + plot_h / 2}" text-anchor="middle" '
-        f'transform="rotate(-90 15 {margin["top"] + plot_h / 2})">{y_label}</text>',
+        f'transform="rotate(-90 15 {margin["top"] + plot_h / 2})">{xml_escape(y_label)}</text>',
     ]
     for (name, pts), color in zip(series.items(), colors * (len(series) // len(colors) + 1)):
         if not pts:
@@ -212,7 +214,7 @@ def write_svg_lines(path: Path, series: dict[str, list[tuple[float, float]]], ti
     for (name, _), color in zip(series.items(), colors * (len(series) // len(colors) + 1)):
         parts.append(f'<rect x="{width - 160}" y="{legend_y}" width="10" height="10" '
                      f'fill="{color}"/>')
-        parts.append(f'<text x="{width - 145}" y="{legend_y + 9}">{name}</text>')
+        parts.append(f'<text x="{width - 145}" y="{legend_y + 9}">{xml_escape(name)}</text>')
         legend_y += 16
     parts.append("</svg>")
     path.write_text("\n".join(parts))

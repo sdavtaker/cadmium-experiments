@@ -129,7 +129,7 @@ STDERR_PATH="$OUT_DIR/${LABEL}.stderr"
 # a negated `if !` condition reflects the negation's own result, not the
 # original command's exit code (it reads as 0 even when the command failed).
 set +e
-timeout "${TIMEOUT}s" "$BINARY" "${BINARY_ARGS[@]:-}" > "$LOG_PATH" 2> "$STDERR_PATH"
+timeout "${TIMEOUT}s" "$BINARY" "${BINARY_ARGS[@]}" > "$LOG_PATH" 2> "$STDERR_PATH"
 status=$?
 set -e
 if [[ "$status" -ne 0 ]]; then
@@ -151,4 +151,4 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 exec python3 "$SCRIPT_DIR/analyze_propagation.py" \
   --log "$LOG_PATH" --label "$LABEL" \
   --total-pieces "$TOTAL_PIECES" --piece-bytes "$PIECE_BYTES" --receiver "$RECEIVER" \
-  --out-dir "$OUT_DIR" "${SOCKET_ARGS[@]:-}" "$@"
+  --out-dir "$OUT_DIR" "${SOCKET_ARGS[@]}" "$@"
