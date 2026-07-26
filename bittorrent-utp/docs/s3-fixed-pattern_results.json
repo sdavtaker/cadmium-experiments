@@ -1,0 +1,21 @@
+{
+  "label": "s3-fixed-pattern",
+  "log": "docs/s3-fixed-pattern.ndjson",
+  "total_pieces": 40,
+  "pieces_completed": 40,
+  "propagation_time_s": 47.44244454999859,
+  "message_counts": {
+    "HANDSHAKE": 4,
+    "BITFIELD": 4,
+    "REQUEST idx:": 1280,
+    "PIECE idx:": 1280,
+    "HAVE idx:": 80,
+    "NOT_INTERESTED": 2,
+    "CANCEL": 0,
+    "KEEPALIVE": 0,
+    "UNCHOKE": 3,
+    "CHOKE (bare)": 0,
+    "INTERESTED (bare)": 2
+  },
+  "total_messages": 2655
+}
