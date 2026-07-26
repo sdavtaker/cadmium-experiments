@@ -1,0 +1,21 @@
+{
+  "label": "s4-policy",
+  "log": "docs/s4-policy.ndjson",
+  "total_pieces": 40,
+  "pieces_completed": 40,
+  "propagation_time_s": 50.9773372399979,
+  "message_counts": {
+    "HANDSHAKE": 4,
+    "BITFIELD": 4,
+    "REQUEST idx:": 1280,
+    "PIECE idx:": 1280,
+    "HAVE idx:": 80,
+    "NOT_INTERESTED": 2,
+    "CANCEL": 0,
+    "KEEPALIVE": 0,
+    "UNCHOKE": 3,
+    "CHOKE (bare)": 0,
+    "INTERESTED (bare)": 2
+  },
+  "total_messages": 2655
+}
